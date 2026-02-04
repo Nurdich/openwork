@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 
 import Button from "./button";
 import { formatKeybindLabel, keybindFromEvent } from "../utils/keybinds";
+import { currentLocale, t } from "../../i18n";
 
 export type KeybindSetting = {
   id: string;
@@ -21,12 +22,13 @@ export type SettingsKeybindsProps = {
 };
 
 export default function SettingsKeybinds(props: SettingsKeybindsProps) {
+  const translate = (key: string) => t(key, currentLocale());
   const [capturingId, setCapturingId] = createSignal<string | null>(null);
 
   const grouped = createMemo(() => {
     const groups = new Map<string, KeybindSetting[]>();
     for (const item of props.items) {
-      const category = item.category ?? "General";
+      const category = item.category ?? translate("keybinds.category.general");
       const list = groups.get(category) ?? [];
       list.push(item);
       groups.set(category, list);
@@ -66,11 +68,11 @@ export default function SettingsKeybinds(props: SettingsKeybindsProps) {
     <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <div class="text-sm font-medium text-gray-12">Keybinds</div>
-          <div class="text-xs text-gray-10">Customize global and session shortcuts.</div>
+          <div class="text-sm font-medium text-gray-12">{translate("keybinds.title")}</div>
+          <div class="text-xs text-gray-10">{translate("keybinds.subtitle")}</div>
         </div>
         <Button variant="outline" disabled={!hasOverrides()} onClick={props.onResetAll}>
-          Reset all
+          {translate("keybinds.reset_all")}
         </Button>
       </div>
 
@@ -85,7 +87,7 @@ export default function SettingsKeybinds(props: SettingsKeybindsProps) {
                     const activeKeybind = () => item.overrideKeybind ?? item.defaultKeybind ?? null;
                     const conflictText = () =>
                       item.conflicts?.length
-                        ? `Conflicts with ${item.conflicts.join(", ")}`
+                        ? translate("keybinds.conflicts_with").replace("{names}", item.conflicts.join(", "))
                         : null;
                     return (
                       <div class="bg-gray-1 border border-gray-6 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
@@ -100,7 +102,9 @@ export default function SettingsKeybinds(props: SettingsKeybindsProps) {
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                           <div class="text-xs text-gray-8 font-mono px-2 py-1 border border-gray-6 rounded-lg">
-                            {activeKeybind() ? formatKeybindLabel(activeKeybind()!) : "Unassigned"}
+                            {activeKeybind()
+                              ? formatKeybindLabel(activeKeybind()!)
+                              : translate("keybinds.unassigned")}
                           </div>
                           <Button
                             variant={capturingId() === item.id ? "secondary" : "outline"}
@@ -109,7 +113,9 @@ export default function SettingsKeybinds(props: SettingsKeybindsProps) {
                               setCapturingId(capturingId() === item.id ? null : item.id)
                             }
                           >
-                            {capturingId() === item.id ? "Press keys" : "Record"}
+                            {capturingId() === item.id
+                              ? translate("keybinds.press_keys")
+                              : translate("keybinds.record")}
                           </Button>
                           <Button
                             variant="ghost"
@@ -117,7 +123,7 @@ export default function SettingsKeybinds(props: SettingsKeybindsProps) {
                             disabled={!item.overrideKeybind}
                             onClick={() => props.onReset(item.id)}
                           >
-                            Reset
+                            {translate("keybinds.reset")}
                           </Button>
                         </div>
                       </div>

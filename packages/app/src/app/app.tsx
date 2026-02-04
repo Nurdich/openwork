@@ -96,7 +96,7 @@ import {
   normalizeDirectoryPath,
 } from "./utils";
 import { isEditableTarget, matchKeybind, normalizeKeybind } from "./utils/keybinds";
-import { currentLocale, setLocale, t, type Language } from "../i18n";
+import { currentLocale, initLocale, setLocale, t, type Language } from "../i18n";
 import {
   isWindowsPlatform,
   lastUserModelFromMessages,
@@ -226,6 +226,10 @@ export default function App() {
     createSignal<OnboardingStep>("welcome");
   const [rememberStartupChoice, setRememberStartupChoice] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal<ThemeMode>(getInitialThemeMode());
+
+  onMount(() => {
+    initLocale();
+  });
 
   const [engineSource, setEngineSource] = createSignal<"path" | "sidecar">(
     isTauriRuntime() ? "sidecar" : "path"
@@ -1855,15 +1859,16 @@ export default function App() {
 
   const resetKeybindOverride = (id: string) => updateKeybindOverride(id, null);
   const resetAllKeybinds = () => setKeybindOverrides({});
+  const translate = (key: string) => t(key, currentLocale());
 
   createEffect(() => {
     const modifier = isWindowsPlatform() ? "ctrl" : "cmd";
     const cleanup = commandRegistry.registerCommands([
       {
         id: "palette.open",
-        title: "Open command palette",
-        category: "Navigation",
-        description: "Search commands and files",
+        title: translate("keybinds.command_palette.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.command_palette.description"),
         keybind: `${modifier}+k`,
         showInPalette: false,
         scope: "global",
@@ -1871,9 +1876,9 @@ export default function App() {
       },
       {
         id: "palette.files",
-        title: "Open file palette",
-        category: "Navigation",
-        description: "Search working files",
+        title: translate("keybinds.file_palette.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.file_palette.description"),
         keybind: `${modifier}+p`,
         showInPalette: false,
         scope: "global",
@@ -1881,9 +1886,9 @@ export default function App() {
       },
       {
         id: "nav.dashboard",
-        title: "Open dashboard",
-        category: "Navigation",
-        description: "Return to the dashboard",
+        title: translate("keybinds.nav_dashboard.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_dashboard.description"),
         scope: "global",
         onSelect: () => {
           setTab("home");
@@ -1892,9 +1897,9 @@ export default function App() {
       },
       {
         id: "nav.sessions",
-        title: "Open sessions",
-        category: "Navigation",
-        description: "View all sessions",
+        title: translate("keybinds.nav_sessions.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_sessions.description"),
         scope: "global",
         onSelect: () => {
           setTab("sessions");
@@ -1903,9 +1908,9 @@ export default function App() {
       },
       {
         id: "nav.commands",
-        title: "Open commands",
-        category: "Navigation",
-        description: "Manage saved commands",
+        title: translate("keybinds.nav_commands.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_commands.description"),
         scope: "global",
         onSelect: () => {
           setTab("commands");
@@ -1914,9 +1919,9 @@ export default function App() {
       },
       {
         id: "nav.skills",
-        title: "Open skills",
-        category: "Navigation",
-        description: "Manage skills",
+        title: translate("keybinds.nav_skills.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_skills.description"),
         scope: "global",
         onSelect: () => {
           setTab("skills");
@@ -1925,9 +1930,9 @@ export default function App() {
       },
       {
         id: "nav.plugins",
-        title: "Open plugins",
-        category: "Navigation",
-        description: "Manage plugins",
+        title: translate("keybinds.nav_plugins.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_plugins.description"),
         scope: "global",
         onSelect: () => {
           setTab("plugins");
@@ -1936,9 +1941,9 @@ export default function App() {
       },
       {
         id: "nav.mcp",
-        title: "Open MCP",
-        category: "Navigation",
-        description: "Manage MCP servers",
+        title: translate("keybinds.nav_mcp.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_mcp.description"),
         scope: "global",
         onSelect: () => {
           setTab("mcp");
@@ -1947,9 +1952,9 @@ export default function App() {
       },
       {
         id: "nav.settings",
-        title: "Open settings",
-        category: "Navigation",
-        description: "Adjust preferences",
+        title: translate("keybinds.nav_settings.title"),
+        category: translate("keybinds.category.navigation"),
+        description: translate("keybinds.nav_settings.description"),
         scope: "global",
         onSelect: () => {
           setTab("settings");
@@ -1958,9 +1963,9 @@ export default function App() {
       },
       {
         id: "session.new-task",
-        title: "Start new task",
-        category: "Sessions",
-        description: "Start a new session",
+        title: translate("keybinds.session_new.title"),
+        category: translate("keybinds.category.sessions"),
+        description: translate("keybinds.session_new.description"),
         scope: "global",
         onSelect: () => {
           createSessionAndOpen();

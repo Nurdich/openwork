@@ -1093,15 +1093,20 @@ export function createWorkspaceStore(options: {
 
     try {
       const selection = await pickFile({
-        title: "Import workspace config",
-        filters: [{ name: "OpenWork Workspace", extensions: ["openwork-workspace", "zip"] }],
+        title: t("workspace.import_config_title", currentLocale()),
+        filters: [
+          {
+            name: t("workspace.import_filter_label", currentLocale()),
+            extensions: ["openwork-workspace", "zip"],
+          },
+        ],
       });
       const filePath =
         typeof selection === "string" ? selection : Array.isArray(selection) ? selection[0] : null;
       if (!filePath) return;
 
       const target = await pickDirectory({
-        title: "Choose a workspace folder",
+        title: t("workspace.choose_folder", currentLocale()),
       });
       const folder =
         typeof target === "string" ? target : Array.isArray(target) ? target[0] : null;

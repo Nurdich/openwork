@@ -168,7 +168,7 @@ export default function WorkspacePicker(props: {
                 class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-11 hover:bg-gray-4 hover:text-gray-12 transition-colors disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <Upload size={16} />
-                Import workspace config
+                {translate("workspace.import_config")}
               </button>
               <button
                 onClick={() => {

@@ -36,6 +36,7 @@ import SkillsView from "./skills";
 import CommandsView from "./commands";
 import StatusBar from "../components/status-bar";
 import ProviderAuthModal from "../components/provider-auth-modal";
+import { currentLocale, t } from "../../i18n";
 import {
   Command,
   Copy,
@@ -259,24 +260,32 @@ export type DashboardViewProps = {
 };
 
 export default function DashboardView(props: DashboardViewProps) {
+  const translate = (key: string) => t(key, currentLocale());
+  const sessionStatusLabel = (status?: string | null) => {
+    if (!status || status === "idle") return translate("dashboard.idle");
+    if (status === "running") return translate("dashboard.running");
+    if (status === "completed") return translate("dashboard.completed");
+    if (status === "failed") return translate("dashboard.failed");
+    return status;
+  };
   const title = createMemo(() => {
     switch (props.tab) {
       case "sessions":
-        return "Sessions";
+        return translate("title.sessions");
       case "scheduled":
-        return "Scheduled Tasks";
+        return translate("title.scheduled_tasks");
       case "commands":
-        return "Commands";
+        return translate("title.commands");
       case "skills":
-        return "Skills";
+        return translate("title.skills");
       case "plugins":
-        return "Plugins";
+        return translate("title.plugins");
       case "mcp":
-        return "MCPs";
+        return translate("title.mcp");
       case "settings":
-        return "Settings";
+        return translate("title.settings");
       default:
-        return "Dashboard";
+        return translate("title.dashboard");
     }
   });
 
@@ -454,18 +463,18 @@ export default function DashboardView(props: DashboardViewProps) {
           </div>
 
           <nav class="space-y-1">
-            {navItem("home", "Dashboard", <Command size={18} />)}
-            {navItem("sessions", "Sessions", <Play size={18} />)}
-            {navItem("scheduled", "Scheduled Tasks", <Calendar size={18} />)}
-            {navItem("commands", "Commands", <Terminal size={18} />)}
-            {navItem("skills", "Skills", <Package size={18} />)}
-            {navItem("plugins", "Plugins", <Cpu size={18} />)}
+            {navItem("home", translate("nav.dashboard"), <Command size={18} />)}
+            {navItem("sessions", translate("nav.sessions"), <Play size={18} />)}
+            {navItem("scheduled", translate("nav.scheduled_tasks"), <Calendar size={18} />)}
+            {navItem("commands", translate("nav.commands"), <Terminal size={18} />)}
+            {navItem("skills", translate("nav.skills"), <Package size={18} />)}
+            {navItem("plugins", translate("nav.plugins"), <Cpu size={18} />)}
             {navItem(
               "mcp",
               <span class="inline-flex items-center gap-2">
-                MCPs
+                {translate("nav.mcp")}
                 <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-7/20 text-amber-12">
-                  Alpha
+                  {translate("nav.mcp_alpha")}
                 </span>
               </span>,
               <Server size={18} />,
@@ -482,7 +491,7 @@ export default function DashboardView(props: DashboardViewProps) {
             }
           >
             <div class="text-[11px] text-gray-9 px-1">
-              OpenWork server is offline — remote tasks still run.
+              {translate("nav.server_offline_hint")}
             </div>
           </Show>
 
@@ -493,7 +502,7 @@ export default function DashboardView(props: DashboardViewProps) {
               disabled={props.busy}
               class="w-full"
             >
-              Connect folder
+              {translate("nav.connect_folder")}
             </Button>
           </Show>
         </div>
@@ -527,11 +536,11 @@ export default function DashboardView(props: DashboardViewProps) {
                 disabled={!canExportWorkspace() || props.exportWorkspaceBusy}
                 title={
                   !canExportWorkspace()
-                    ? "Export is only available for local workspaces"
-                    : "Export workspace config"
+                    ? translate("dashboard.export_local_only")
+                    : translate("dashboard.export_config")
                 }
               >
-                Share config
+                {translate("dashboard.share_config")}
               </Button>
               <Button
                 onPointerDown={(e) => {
@@ -542,10 +551,10 @@ export default function DashboardView(props: DashboardViewProps) {
                   props.createSessionAndOpen();
                 }}
                 disabled={props.newTaskDisabled}
-                title={props.newTaskDisabled ? props.busyHint ?? "Busy" : ""}
+                title={props.newTaskDisabled ? props.busyHint ?? translate("dashboard.busy") : ""}
               >
                 <Play size={16} />
-                New Task
+                {translate("dashboard.new_task")}
               </Button>
             </Show>
 
@@ -567,7 +576,7 @@ export default function DashboardView(props: DashboardViewProps) {
                 disabled={props.busy}
               >
                 <Plus size={16} />
-                New
+                {translate("dashboard.new")}
               </Button>
             </Show>
           </div>
@@ -581,11 +590,10 @@ export default function DashboardView(props: DashboardViewProps) {
                   <div class="bg-gray-1 rounded-[22px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
                     <div class="space-y-2 text-center md:text-left">
                       <h2 class="text-2xl font-semibold text-gray-12">
-                        What should we do today?
+                        {translate("dashboard.hero_title")}
                       </h2>
                       <p class="text-gray-11">
-                        Describe an outcome. OpenWork will run it and keep an
-                        audit trail.
+                        {translate("dashboard.hero_description")}
                       </p>
                     </div>
                     <div class="w-full md:w-[360px]">
@@ -599,9 +607,9 @@ export default function DashboardView(props: DashboardViewProps) {
                               startTask();
                             }
                           }}
-                          placeholder="Draft a task to run..."
+                          placeholder={translate("dashboard.task_placeholder")}
                           class="flex-1 bg-transparent border-none p-0 text-sm text-gray-12 placeholder-gray-7 focus:ring-0"
-                          aria-label="Describe a task"
+                          aria-label={translate("dashboard.task_aria_label")}
                           disabled={props.newTaskDisabled}
                         />
                         <button
@@ -610,14 +618,14 @@ export default function DashboardView(props: DashboardViewProps) {
                           disabled={!canCreateTask()}
                           class="rounded-xl bg-gray-12 px-3 py-1.5 text-xs font-semibold text-gray-1 shadow-md transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
                           title={
-                            props.newTaskDisabled ? props.busyHint ?? "Busy" : ""
+                            props.newTaskDisabled ? props.busyHint ?? translate("dashboard.busy") : ""
                           }
                         >
-                          Run
+                          {translate("dashboard.run")}
                         </button>
                       </div>
                       <div class="mt-2 text-[11px] text-gray-9 text-center md:text-left">
-                        Press Enter to start a new session.
+                        {translate("dashboard.enter_to_start")}
                       </div>
                     </div>
                   </div>
@@ -627,13 +635,13 @@ export default function DashboardView(props: DashboardViewProps) {
               <section>
                 <div class="flex items-center justify-between mb-4">
                   <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider">
-                    Quick Start Commands
+                    {translate("dashboard.quick_start_commands")}
                   </h3>
                   <button
                     class="text-sm text-gray-10 hover:text-gray-12"
                     onClick={() => props.setTab("commands")}
                   >
-                    View all
+                    {translate("dashboard.view_all")}
                   </button>
                 </div>
 
@@ -641,7 +649,7 @@ export default function DashboardView(props: DashboardViewProps) {
                   when={quickCommands().length}
                   fallback={
                     <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl p-6 text-sm text-gray-10">
-                      No commands yet. Starter commands will appear here.
+                      {translate("dashboard.no_commands")}
                     </div>
                   }
                 >
@@ -657,7 +665,7 @@ export default function DashboardView(props: DashboardViewProps) {
                           </div>
                           <h4 class="font-medium text-gray-12 mb-1">/{command.name}</h4>
                           <p class="text-sm text-gray-10">
-                            {command.description || "Run a saved command"}
+                            {command.description || translate("dashboard.run_command")}
                           </p>
                         </button>
                       )}
@@ -669,7 +677,7 @@ export default function DashboardView(props: DashboardViewProps) {
               <section>
                 <div class="flex items-center justify-between mb-4">
                   <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider">
-                    Workspaces
+                    {translate("dashboard.workspaces")}
                   </h3>
                   <div class="flex items-center gap-2">
                     <Button
@@ -679,11 +687,11 @@ export default function DashboardView(props: DashboardViewProps) {
                       disabled={!canExportWorkspace() || props.exportWorkspaceBusy}
                       title={
                         !canExportWorkspace()
-                          ? "Export is only available for local workspaces"
-                          : "Export workspace config"
+                          ? translate("dashboard.export_local_only")
+                          : translate("dashboard.export_config")
                       }
                     >
-                      Share config
+                      {translate("dashboard.share_config")}
                     </Button>
                     <Button
                       variant="secondary"
@@ -691,7 +699,7 @@ export default function DashboardView(props: DashboardViewProps) {
                       onClick={() => props.setWorkspacePickerOpen(true)}
                     >
                       <Plus size={14} />
-                      Add workspace
+                      {translate("dashboard.add_workspace")}
                     </Button>
                   </div>
                 </div>
@@ -713,8 +721,12 @@ export default function DashboardView(props: DashboardViewProps) {
                                 type="button"
                                 class="shrink-0 rounded-md p-1 text-gray-9 hover:text-gray-12 hover:bg-gray-3 transition-colors"
                                 onClick={() => handleCopyWorkspace(workspace)}
-                                title={copiedWorkspaceId() === workspace.id ? "Copied" : "Copy path"}
-                                aria-label="Copy workspace path"
+                                title={
+                                  copiedWorkspaceId() === workspace.id
+                                    ? translate("dashboard.copied")
+                                    : translate("dashboard.copy_path")
+                                }
+                                aria-label={translate("dashboard.copy_path")}
                               >
                                 <Show when={copiedWorkspaceId() === workspace.id} fallback={<Copy size={12} />}>
                                   <Check size={12} class="text-green-11" />
@@ -723,13 +735,15 @@ export default function DashboardView(props: DashboardViewProps) {
                             </div>
                           </div>
                           <span class="text-[11px] text-gray-9">
-                            {workspace.workspaceType === "remote" ? "Remote" : "Local"}
+                            {workspace.workspaceType === "remote"
+                              ? translate("dashboard.remote")
+                              : translate("dashboard.local")}
                           </span>
                         </div>
                         <div class="flex items-center justify-end text-xs text-gray-9 h-8">
                           <Show when={workspace.id === props.activeWorkspaceId}>
                             <span class="text-green-11 font-medium flex items-center gap-1.5 !px-2">
-                              Active
+                              {translate("dashboard.active")}
                             </span>
                           </Show>
                           <Show when={workspace.id !== props.activeWorkspaceId}>
@@ -740,8 +754,8 @@ export default function DashboardView(props: DashboardViewProps) {
                               disabled={props.connectingWorkspaceId === workspace.id}
                             >
                               {props.connectingWorkspaceId === workspace.id
-                                ? "Switching..."
-                                : "Switch"}
+                                ? translate("dashboard.switching")
+                                : translate("dashboard.switch")}
                             </Button>
                           </Show>
                         </div>
@@ -753,7 +767,7 @@ export default function DashboardView(props: DashboardViewProps) {
 
               <section>
                 <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider mb-4">
-                  Recent Sessions
+                  {translate("dashboard.recent_sessions")}
                 </h3>
 
                 <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl overflow-hidden">
@@ -790,7 +804,7 @@ export default function DashboardView(props: DashboardViewProps) {
                         <div class="flex items-center gap-4">
                           <span class="text-xs px-2 py-0.5 rounded-full border border-gray-7/60 text-gray-11 flex items-center gap-1.5">
                             <span class="w-1.5 h-1.5 rounded-full bg-current" />
-                            {props.sessionStatusById[s.id] ?? "idle"}
+                            {sessionStatusLabel(props.sessionStatusById[s.id])}
                           </span>
                         </div>
                       </button>
@@ -799,14 +813,14 @@ export default function DashboardView(props: DashboardViewProps) {
 
                   <Show when={!props.sessions.length}>
                     <div class="p-6 text-sm text-gray-10 space-y-3">
-                      <div>No sessions yet.</div>
+                      <div>{translate("dashboard.no_sessions")}</div>
                       <Button
                         variant="secondary"
                         class="text-xs h-8"
                         onClick={props.createSessionAndOpen}
                         disabled={props.newTaskDisabled}
                       >
-                        Start a task
+                        {translate("dashboard.start_task")}
                       </Button>
                     </div>
                   </Show>
@@ -817,7 +831,7 @@ export default function DashboardView(props: DashboardViewProps) {
             <Match when={props.tab === "sessions"}>
               <section>
                 <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider mb-4">
-                  Sessions
+                  {translate("dashboard.sessions")}
                 </h3>
 
                 <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl overflow-hidden">
@@ -854,7 +868,7 @@ export default function DashboardView(props: DashboardViewProps) {
                         <div class="flex items-center gap-4">
                           <span class="text-xs px-2 py-0.5 rounded-full border border-gray-7/60 text-gray-11 flex items-center gap-1.5">
                             <span class="w-1.5 h-1.5 rounded-full bg-current" />
-                            {props.sessionStatusById[s.id] ?? "idle"}
+                            {sessionStatusLabel(props.sessionStatusById[s.id])}
                           </span>
                         </div>
                       </button>
@@ -863,7 +877,7 @@ export default function DashboardView(props: DashboardViewProps) {
 
                   <Show when={!props.sessions.length}>
                     <div class="p-6 text-sm text-gray-10">
-                      No sessions yet.
+                      {translate("dashboard.no_sessions")}
                     </div>
                   </Show>
                 </div>

@@ -5,6 +5,7 @@ import type { OpenworkServerStatus } from "../lib/openwork-server";
 import type { OwpenbotStatus } from "../lib/tauri";
 import type { McpStatusMap } from "../types";
 import { getOwpenbotStatus } from "../lib/tauri";
+import { currentLocale, t } from "../../i18n";
 
 import Button from "./button";
 
@@ -21,40 +22,49 @@ type StatusBarProps = {
 };
 
 export default function StatusBar(props: StatusBarProps) {
+  const translate = (key: string) => t(key, currentLocale());
   const [owpenbotStatus, setOwpenbotStatus] = createSignal<OwpenbotStatus | null>(null);
   const [documentVisible, setDocumentVisible] = createSignal(true);
 
   const opencodeStatusMeta = createMemo(() => ({
     dot: props.clientConnected ? "bg-green-9" : "bg-gray-6",
     text: props.clientConnected ? "text-green-11" : "text-gray-10",
-    label: props.clientConnected ? "Connected" : "Not connected",
+    label: props.clientConnected ? translate("status.connected") : translate("status.not_connected"),
   }));
 
   const openworkStatusMeta = createMemo(() => {
     switch (props.openworkServerStatus) {
       case "connected":
-        return { dot: "bg-green-9", text: "text-green-11", label: "Ready" };
+        return { dot: "bg-green-9", text: "text-green-11", label: translate("status.ready") };
       case "limited":
-        return { dot: "bg-amber-9", text: "text-amber-11", label: "Limited access" };
+        return {
+          dot: "bg-amber-9",
+          text: "text-amber-11",
+          label: translate("status.limited_access"),
+        };
       default:
-        return { dot: "bg-gray-6", text: "text-gray-10", label: "Unavailable" };
+        return { dot: "bg-gray-6", text: "text-gray-10", label: translate("status.unavailable") };
     }
   });
 
   const messagingMeta = createMemo(() => {
     const status = owpenbotStatus();
     if (!status) {
-      return { dot: "bg-gray-6", text: "text-gray-10", label: "Messaging bridge unavailable" };
+      return {
+        dot: "bg-gray-6",
+        text: "text-gray-10",
+        label: translate("status.messaging_unavailable"),
+      };
     }
     const whatsappLinked = status.whatsapp.linked;
     const telegramConfigured = status.telegram.configured;
     if (whatsappLinked && telegramConfigured) {
-      return { dot: "bg-green-9", text: "text-green-11", label: "Messaging bridge ready" };
+      return { dot: "bg-green-9", text: "text-green-11", label: translate("status.messaging_ready") };
     }
     if (whatsappLinked || telegramConfigured || status.running) {
-      return { dot: "bg-amber-9", text: "text-amber-11", label: "Messaging bridge setup" };
+      return { dot: "bg-amber-9", text: "text-amber-11", label: translate("status.messaging_setup") };
     }
-    return { dot: "bg-gray-6", text: "text-gray-10", label: "Messaging bridge offline" };
+    return { dot: "bg-gray-6", text: "text-gray-10", label: translate("status.messaging_offline") };
   });
 
   type ProTip = {
@@ -78,7 +88,7 @@ export default function StatusBar(props: StatusBarProps) {
   const proTips = createMemo<ProTip[]>(() => [
     {
       id: "telegram",
-      label: "Connect Telegram",
+      label: translate("tip.connect_telegram"),
       enabled: () => {
         const status = owpenbotStatus();
         return Boolean(status && !status.telegram.configured);
@@ -87,7 +97,7 @@ export default function StatusBar(props: StatusBarProps) {
     },
     {
       id: "whatsapp",
-      label: "Connect WhatsApp",
+      label: translate("tip.connect_whatsapp"),
       enabled: () => {
         const status = owpenbotStatus();
         return Boolean(status && !status.whatsapp.linked);
@@ -96,13 +106,13 @@ export default function StatusBar(props: StatusBarProps) {
     },
     {
       id: "notion",
-      label: "Connect Notion MCP",
+      label: translate("tip.connect_notion"),
       enabled: () => notionStatus() !== "connected",
       action: () => runAction(props.onOpenMcp),
     },
     {
       id: "providers",
-      label: "Use your own models (OpenRouter, Anthropic, OpenAI)",
+      label: translate("tip.use_own_models"),
       enabled: () => props.clientConnected && providerConnectedCount() === 0,
       action: () => runAction(props.onOpenProviders),
     },
@@ -191,7 +201,7 @@ export default function StatusBar(props: StatusBarProps) {
       <div class="mx-auto max-w-5xl px-4 py-2 flex flex-wrap items-center gap-3 text-xs">
         <div
           class="flex items-center gap-2"
-          title={`OpenCode Engine: ${opencodeStatusMeta().label}`}
+          title={`${translate("status.opencode_engine")}: ${opencodeStatusMeta().label}`}
         >
           <span class={`w-2 h-2 rounded-full ${opencodeStatusMeta().dot}`} />
           <Cpu class="w-4 h-4 text-gray-11" />
@@ -203,7 +213,7 @@ export default function StatusBar(props: StatusBarProps) {
         <div class="w-px h-4 bg-gray-6/70" />
         <div
           class="flex items-center gap-2"
-          title={`OpenWork Server: ${openworkStatusMeta().label}`}
+          title={`${translate("status.openwork_server")}: ${openworkStatusMeta().label}`}
         >
           <span class={`w-2 h-2 rounded-full ${openworkStatusMeta().dot}`} />
           <Server class="w-4 h-4 text-gray-11" />
@@ -224,7 +234,7 @@ export default function StatusBar(props: StatusBarProps) {
               <span class={`absolute -right-1 -bottom-1 w-2 h-2 rounded-full ${messagingMeta().dot}`} />
             </span>
             <Show when={props.developerMode}>
-              <span class="text-gray-11 font-medium">Messaging</span>
+              <span class="text-gray-11 font-medium">{translate("status.messaging_label")}</span>
             </Show>
           </Button>
           <Show when={tipVisible() && activeTip()}>
@@ -235,7 +245,9 @@ export default function StatusBar(props: StatusBarProps) {
               title={activeTip()?.label}
               aria-label={activeTip()?.label}
             >
-              <span class="uppercase tracking-[0.2em] text-[10px] text-gray-8">Tip</span>
+              <span class="uppercase tracking-[0.2em] text-[10px] text-gray-8">
+                {translate("status.tip_label")}
+              </span>
               <span class="text-gray-11 font-medium">{activeTip()?.label}</span>
             </button>
           </Show>
@@ -243,11 +255,11 @@ export default function StatusBar(props: StatusBarProps) {
             variant="ghost"
             class="h-7 px-2.5 py-0 text-xs"
             onClick={props.onOpenSettings}
-            title="Settings"
+            title={translate("common.settings")}
           >
             <Settings class="w-4 h-4" />
             <Show when={props.developerMode}>
-              <span class="text-gray-11 font-medium">Settings</span>
+              <span class="text-gray-11 font-medium">{translate("common.settings")}</span>
             </Show>
           </Button>
         </div>
