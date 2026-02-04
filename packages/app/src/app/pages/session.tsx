@@ -34,6 +34,7 @@ import { join } from "@tauri-apps/api/path";
 import browserSetupCommandTemplate from "../data/commands/browser-setup.md?raw";
 import { opencodeCommandWrite } from "../lib/tauri";
 import { isTauriRuntime, parseTemplateFrontmatter } from "../utils";
+import { currentLocale, t } from "../../i18n";
 
 import MessageList from "../components/session/message-list";
 import Composer from "../components/session/composer";
@@ -160,6 +161,7 @@ const arraysEqual = (a: string[], b: string[]) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
 
 export default function SessionView(props: SessionViewProps) {
+  const translate = (key: string) => t(key, currentLocale());
   let messagesEndEl: HTMLDivElement | undefined;
   let chatContainerEl: HTMLDivElement | undefined;
   let agentPickerRef: HTMLDivElement | undefined;
@@ -1297,10 +1299,10 @@ export default function SessionView(props: SessionViewProps) {
                 props.setTab("sessions");
                 props.setView("dashboard");
               }}
-              title="Back to dashboard"
+              title={translate("session.back_to_dashboard")}
             >
               <ArrowRight class="rotate-180 w-5 h-5" />
-              <span class="hidden md:inline text-xs">Back</span>
+              <span class="hidden md:inline text-xs">{translate("session.back")}</span>
             </Button>
               <WorkspaceChip
                 workspace={props.activeWorkspaceDisplay}
@@ -1358,9 +1360,9 @@ export default function SessionView(props: SessionViewProps) {
                   <Zap class="text-gray-7" />
                 </div>
                 <div class="space-y-2">
-                  <h3 class="text-xl font-medium">What do you want to do?</h3>
+                  <h3 class="text-xl font-medium">{translate("session.empty_title")}</h3>
                   <p class="text-gray-10 text-sm max-w-sm mx-auto">
-                    Pick a starting point or just type below.
+                    {translate("session.empty_subtitle")}
                   </p>
                 </div>
                 <div class="flex justify-center">
@@ -1376,7 +1378,7 @@ export default function SessionView(props: SessionViewProps) {
                       })();
                     }}
                   >
-                    Automate your browser
+                    {translate("session.automate_browser")}
                   </button>
                 </div>
               </div>
