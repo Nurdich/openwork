@@ -41,7 +41,7 @@ export const isLanguage = (value: unknown): value is Language => {
 /**
  * Create root-level locale signal with persistence
  */
-const [locale, setLocaleSignal] = createRoot(() => createSignal<Language>("en"));
+const [locale, setLocaleSignal] = createRoot(() => createSignal<Language>("zh"));
 
 /**
  * Get current locale
@@ -121,8 +121,8 @@ export const initLocale = (): Language => {
   }
 
   if (typeof document !== "undefined") {
-    document.documentElement.setAttribute("lang", "en");
+    document.documentElement.setAttribute("lang", "zh");
   }
 
-  return "en";
+  return "zh";
 };
