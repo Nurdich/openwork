@@ -4,6 +4,7 @@ import { ChevronDown, Circle, File, Folder, Package } from "lucide-solid";
 import { SUGGESTED_PLUGINS } from "../../constants";
 import type { McpServerEntry, McpStatus, McpStatusMap, SkillCard } from "../../types";
 import { stripPluginVersion } from "../../utils/plugins";
+import { currentLocale, t } from "../../../i18n";
 
 export type ContextPanelProps = {
   activePlugins: string[];
@@ -107,20 +108,24 @@ const getSmartFileName = (files: string[], file: string): string => {
   return file;
 };
 
-const mcpStatusLabel = (status?: McpStatus, disabled?: boolean) => {
-  if (disabled) return "Disabled";
-  if (!status) return "Disconnected";
+const mcpStatusLabel = (
+  status: McpStatus | undefined,
+  disabled: boolean | undefined,
+  translate: (key: string) => string,
+) => {
+  if (disabled) return translate("context.mcp.disabled");
+  if (!status) return translate("context.mcp.disconnected");
   switch (status.status) {
     case "connected":
-      return "Connected";
+      return translate("context.mcp.connected");
     case "needs_auth":
-      return "Needs auth";
+      return translate("context.mcp.needs_auth");
     case "needs_client_registration":
-      return "Register client";
+      return translate("context.mcp.register_client");
     case "failed":
-      return "Failed";
+      return translate("context.mcp.failed");
     default:
-      return "Disconnected";
+      return translate("context.mcp.disconnected");
   }
 };
 
@@ -141,6 +146,7 @@ const mcpStatusDot = (status?: McpStatus, disabled?: boolean) => {
 };
 
 export default function ContextPanel(props: ContextPanelProps) {
+  const translate = (key: string) => t(key, currentLocale());
   const displayFiles = () =>
     props.workingFiles.map((entry) => toWorkspaceRelative(entry, props.workspaceRoot));
 
@@ -152,7 +158,7 @@ export default function ContextPanel(props: ContextPanelProps) {
             class="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-12 font-medium"
             onClick={() => props.onToggleSection("context")}
           >
-            <span>Context</span>
+            <span>{translate("context.title")}</span>
             <ChevronDown
               size={16}
               class={`transition-transform text-gray-10 ${props.expandedSections.context ? "rotate-180" : ""}`.trim()}
@@ -162,12 +168,12 @@ export default function ContextPanel(props: ContextPanelProps) {
             <div class="px-4 pb-4 pt-1 space-y-5">
               <div>
                 <div class="flex items-center justify-between text-[11px] uppercase tracking-wider text-gray-9 font-semibold mb-2">
-                  <span>Working files</span>
+                  <span>{translate("context.working_files")}</span>
                 </div>
                 <div class="space-y-2">
                   <Show
                     when={props.workingFiles.length}
-                    fallback={<div class="text-xs text-gray-9">None yet.</div>}
+                    fallback={<div class="text-xs text-gray-9">{translate("context.none_yet")}</div>}
                   >
                     <For each={props.workingFiles}>
                       {(file) => {
@@ -183,7 +189,11 @@ export default function ContextPanel(props: ContextPanelProps) {
                                 : "cursor-default opacity-70"
                             }`.trim()}
                             onClick={() => props.onFileClick?.(file)}
-                            title={canOpen() ? `Open ${displayPath()}` : displayPath()}
+                            title={
+                              canOpen()
+                                ? translate("context.open_file").replace("{path}", displayPath())
+                                : displayPath()
+                            }
                             disabled={!canOpen()}
                           >
                             <File size={12} class="text-gray-9" />
@@ -204,7 +214,7 @@ export default function ContextPanel(props: ContextPanelProps) {
             class="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-12 font-medium"
             onClick={() => props.onToggleSection("plugins")}
           >
-            <span>Plugins</span>
+            <span>{translate("context.plugins")}</span>
             <ChevronDown
               size={16}
               class={`transition-transform text-gray-10 ${props.expandedSections.plugins ? "rotate-180" : ""}`.trim()}
@@ -217,7 +227,7 @@ export default function ContextPanel(props: ContextPanelProps) {
                   when={props.activePlugins.length}
                   fallback={
                     <div class="text-xs text-gray-9">
-                      {props.activePluginStatus ?? "No plugins loaded."}
+                      {props.activePluginStatus ?? translate("context.plugins_empty")}
                     </div>
                   }
                 >
@@ -254,7 +264,7 @@ export default function ContextPanel(props: ContextPanelProps) {
             class="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-12 font-medium"
             onClick={() => props.onToggleSection("mcp")}
           >
-            <span>MCP</span>
+            <span>{translate("context.mcp")}</span>
             <ChevronDown
               size={16}
               class={`transition-transform text-gray-10 ${props.expandedSections.mcp ? "rotate-180" : ""}`.trim()}
@@ -267,7 +277,7 @@ export default function ContextPanel(props: ContextPanelProps) {
                   when={props.mcpServers.length}
                   fallback={
                     <div class="text-xs text-gray-9">
-                      {props.mcpStatus ?? "No MCP servers loaded."}
+                      {props.mcpStatus ?? translate("context.mcp_empty")}
                     </div>
                   }
                 >
@@ -285,7 +295,7 @@ export default function ContextPanel(props: ContextPanelProps) {
                           <div class="min-w-0">
                             <div class="truncate">{entry.name}</div>
                             <div class="text-[11px] text-gray-9 truncate">
-                              {mcpStatusLabel(status(), disabled())}
+                              {mcpStatusLabel(status(), disabled(), translate)}
                               {detail ? ` - ${detail}` : ""}
                             </div>
                           </div>
@@ -304,7 +314,7 @@ export default function ContextPanel(props: ContextPanelProps) {
             class="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-12 font-medium"
             onClick={() => props.onToggleSection("skills")}
           >
-            <span>Skills</span>
+            <span>{translate("context.skills")}</span>
             <ChevronDown
               size={16}
               class={`transition-transform text-gray-10 ${props.expandedSections.skills ? "rotate-180" : ""}`.trim()}
@@ -317,7 +327,7 @@ export default function ContextPanel(props: ContextPanelProps) {
                   when={props.skills.length}
                   fallback={
                     <div class="text-xs text-gray-9">
-                      {props.skillsStatus ?? "No skills loaded."}
+                      {props.skillsStatus ?? translate("context.skills_empty")}
                     </div>
                   }
                 >
@@ -353,7 +363,7 @@ export default function ContextPanel(props: ContextPanelProps) {
             class="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-12 font-medium"
             onClick={() => props.onToggleSection("authorizedFolders")}
           >
-            <span>Authorized folders</span>
+            <span>{translate("context.authorized_folders")}</span>
             <ChevronDown
               size={16}
               class={`transition-transform text-gray-10 ${
@@ -366,7 +376,7 @@ export default function ContextPanel(props: ContextPanelProps) {
               <div class="space-y-2">
                 <Show
                   when={props.authorizedDirs.length}
-                  fallback={<div class="text-xs text-gray-9">None yet.</div>}
+                  fallback={<div class="text-xs text-gray-9">{translate("context.none_yet")}</div>}
                 >
                   <For each={props.authorizedDirs.slice(0, 3)}>
                     {(folder) => (
