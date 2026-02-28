@@ -1,0 +1,2 @@
+{"ts":"2026-02-28T16:25:47Z","workspace":"/g/PycharmProjects/openwork","summary":"心跳已运行，但读取 .opencode/soul.md 与 AGENTS.md 受限，且 opencode.db 缺少 session 表，当前以降级模式记录。","loose_ends":["修复读取权限/路径匹配，以便读取 soul.md 与 AGENTS.md","确认 opencode.db 架构或路径，恢复会话/待办查询"],"next_action":"恢复读取权限后重跑心跳流程"}
+{"ts":"2026-02-28T00:00:00Z","workspace":"/g/PycharmProjects/openwork","summary":"完成一次 Soul Mode 心跳记录并确认环境可读。","loose_ends":["心跳频率偏好仍未确认（当前默认 12 小时）。"],"next_action":"继续按默认 12 小时节奏记录心跳。"}
