@@ -108,7 +108,7 @@ import {
   normalizeDirectoryQueryPath,
   normalizeDirectoryPath,
 } from "./utils";
-import { currentLocale, setLocale, t, type Language } from "../i18n";
+import { currentLocale, initLocale, setLocale, t, type Language } from "../i18n";
 import {
   isWindowsPlatform,
   lastUserModelFromMessages,
@@ -4853,6 +4853,7 @@ export default function App() {
 
 
   onMount(async () => {
+    initLocale();
     const startupPref = readStartupPreference();
     if (startupPref) {
       setRememberStartupChoice(true);
