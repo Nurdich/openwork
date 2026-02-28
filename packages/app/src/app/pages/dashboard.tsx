@@ -70,7 +70,7 @@ import {
   SlidersHorizontal,
   Zap,
 } from "lucide-solid";
-import type { Language } from "../../i18n";
+import { currentLocale, t, type Language } from "../../i18n";
 
 export type DashboardViewProps = {
   tab: DashboardTab;
@@ -336,26 +336,27 @@ type SkillsSetBundleV1 = {
 };
 
 export default function DashboardView(props: DashboardViewProps) {
+  const translate = (key: string) => t(key, currentLocale());
   const title = createMemo(() => {
     switch (props.tab) {
       case "scheduled":
-        return "Automations";
+        return translate("nav.automations");
       case "soul":
-        return "Soul";
+        return translate("nav.soul");
       case "skills":
-        return "Skills";
+        return translate("dashboard.skills");
       case "plugins":
-        return "Extensions";
+        return translate("nav.extensions");
       case "mcp":
-        return "Extensions";
+        return translate("nav.extensions");
       case "identities":
-        return "Messaging";
+        return translate("nav.messaging");
       case "config":
-        return "Advanced";
+        return translate("dashboard.advanced");
       case "settings":
-        return "Settings";
+        return translate("dashboard.settings");
       default:
-        return "Automations";
+        return translate("nav.automations");
     }
   });
 
@@ -364,15 +365,15 @@ export default function DashboardView(props: DashboardViewProps) {
     workspace.openworkWorkspaceName?.trim() ||
     workspace.name?.trim() ||
     workspace.path?.trim() ||
-    "Worker";
+    translate("dashboard.worker");
   const workspaceKindLabel = (workspace: WorkspaceInfo) =>
     workspace.workspaceType === "remote"
       ? workspace.sandboxBackend === "docker" ||
         Boolean(workspace.sandboxRunId?.trim()) ||
         Boolean(workspace.sandboxContainerName?.trim())
-        ? "Sandbox"
-        : "Remote"
-      : "Local";
+        ? translate("dashboard.sandbox")
+        : translate("dashboard.remote")
+      : translate("dashboard.local");
 
   const openSessionFromList = (workspaceId: string, sessionId: string) => {
     // Route-driven selection: navigate first and let the route effect own selectSession.
@@ -1133,7 +1134,7 @@ export default function DashboardView(props: DashboardViewProps) {
             <Show when={props.activeSoulStatus?.enabled}>
               <div class="inline-flex items-center gap-1 rounded-full border border-rose-7/40 bg-rose-3/40 px-2 py-1 text-[11px] text-rose-11">
                 <HeartPulse size={11} />
-                Soul on
+                {translate("dashboard.soul_on")}
               </div>
             </Show>
             <h1 class="text-lg font-medium">{title()}</h1>
@@ -1403,7 +1404,7 @@ export default function DashboardView(props: DashboardViewProps) {
                     onClick={props.repairOpencodeCache}
                     disabled={props.cacheRepairBusy || !props.developerMode}
                   >
-                    {props.cacheRepairBusy ? "Repairing cache" : "Repair cache"}
+                    {props.cacheRepairBusy ? translate("dashboard.repairing_cache") : translate("dashboard.repair_cache")}
                   </Button>
                   <Button
                     variant="outline"
@@ -1411,7 +1412,7 @@ export default function DashboardView(props: DashboardViewProps) {
                     onClick={props.stopHost}
                     disabled={props.busy}
                   >
-                    Retry
+                    {translate("dashboard.retry")}
                   </Button>
                   <Show when={props.cacheRepairResult}>
                     <span class="text-xs text-red-12/80">
@@ -1491,7 +1492,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("scheduled")}
             >
               <History size={18} />
-              Automations
+              {translate("nav.automations")}
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1500,7 +1501,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("soul")}
             >
               <HeartPulse size={18} class={soulNavIconClass()} />
-              Soul
+              {translate("nav.soul")}
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1509,7 +1510,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("skills")}
             >
               <Zap size={18} />
-              Skills
+              {translate("dashboard.skills")}
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1518,7 +1519,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("mcp")}
             >
               <Box size={18} />
-              Extensions
+              {translate("nav.extensions")}
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1527,7 +1528,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("identities")}
             >
               <MessageCircle size={18} />
-              IDs
+              {translate("nav.messaging")}
             </button>
             <Show when={props.developerMode}>
               <button
@@ -1546,12 +1547,12 @@ export default function DashboardView(props: DashboardViewProps) {
 
       <aside class="w-56 hidden md:flex flex-col bg-dls-sidebar border-l border-dls-border p-4">
         <div class="space-y-1 pt-2">
-          {navItem("scheduled", "Automations", <History size={18} />)}
-          {navItem("soul", "Soul", <HeartPulse size={18} class={soulNavIconClass()} />)}
-          {navItem("skills", "Skills", <Zap size={18} />)}
-          {navItem("mcp", "Extensions", <Box size={18} />)}
-          {navItem("identities", "Messaging", <MessageCircle size={18} />)}
-          <Show when={props.developerMode}>{navItem("config", "Advanced", <SlidersHorizontal size={18} />)}</Show>
+          {navItem("scheduled", translate("nav.automations"), <History size={18} />)}
+          {navItem("soul", translate("nav.soul"), <HeartPulse size={18} class={soulNavIconClass()} />)}
+          {navItem("skills", translate("dashboard.skills"), <Zap size={18} />)}
+          {navItem("mcp", translate("nav.extensions"), <Box size={18} />)}
+          {navItem("identities", translate("nav.messaging"), <MessageCircle size={18} />)}
+          <Show when={props.developerMode}>{navItem("config", translate("dashboard.advanced"), <SlidersHorizontal size={18} />)}</Show>
         </div>
       </aside>
 

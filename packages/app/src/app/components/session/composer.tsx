@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 import type { Agent } from "@opencode-ai/sdk/v2/client";
 import fuzzysort from "fuzzysort";
 import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Paperclip, Square, Terminal, X, Zap } from "lucide-solid";
+import { currentLocale, t } from "../../../i18n";
 
 import type { ComposerAttachment, ComposerDraft, ComposerPart, PromptMode, SlashCommandOption } from "../../types";
 import { perfNow, recordPerfLog } from "../../lib/perf-log";
@@ -446,6 +447,7 @@ const buildRangeFromOffsets = (root: HTMLElement, start: number, end: number) =>
 };
 
 export default function Composer(props: ComposerProps) {
+  const translate = (key: string) => t(key, currentLocale());
   let editorRef: HTMLDivElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let inboxFileInputRef: HTMLInputElement | undefined;
@@ -1662,8 +1664,8 @@ export default function Composer(props: ComposerProps) {
                 class="w-full mb-2 flex items-center justify-between gap-3 rounded-xl border border-green-7/20 bg-green-7/10 px-3 py-2 text-left text-sm text-green-12 transition-colors hover:bg-green-7/15"
                 onClick={props.onNotionBannerClick}
               >
-                <span>Try it now: set up my CRM in Notion</span>
-                <span class="text-xs text-green-12 font-medium">Insert prompt</span>
+                <span>{translate("session.try_notion_prompt")}</span>
+                <span class="text-xs text-green-12 font-medium">{translate("session.insert_prompt")}</span>
               </button>
             </Show>
 
@@ -1731,7 +1733,7 @@ export default function Composer(props: ComposerProps) {
                   <div class="relative">
                     <Show when={!hasDraftContent()}>
                       <div class="absolute left-0 top-0 text-gray-9 text-[15px] leading-relaxed pointer-events-none">
-                        Ask OpenWork...
+                        {translate("session.placeholder")}
                       </div>
                     </Show>
                     <div
@@ -1891,7 +1893,7 @@ export default function Composer(props: ComposerProps) {
                             disabled={props.busy}
                             aria-expanded={variantMenuOpen()}
                           >
-                            <span>Thinking</span>
+                            <span>{translate("settings.thinking")}</span>
                             <span class="font-mono text-gray-11">{props.modelVariantLabel}</span>
                             <ChevronDown size={14} />
                           </button>

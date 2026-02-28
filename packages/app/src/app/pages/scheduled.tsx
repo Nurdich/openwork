@@ -3,6 +3,7 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import type { ScheduledJob } from "../types";
 import { usePlatform } from "../context/platform";
 import { formatRelativeTime, isTauriRuntime } from "../utils";
+import { currentLocale, t } from "../../i18n";
 
 import Button from "../components/button";
 import {
@@ -326,6 +327,7 @@ const AutomationJobCard = (props: {
   onDelete: () => void;
   onRun: () => void;
 }) => {
+  const translate = (key: string) => t(key, currentLocale());
   const summary = () => taskSummary(props.job);
   const status = () => props.job.lastRunStatus;
   const scheduleLabel = () => humanizeCron(props.job.schedule);
@@ -379,7 +381,7 @@ const AutomationJobCard = (props: {
             }`}
           >
             <Trash2 size={12} />
-            Delete
+            {translate("scheduled.delete")}
           </button>
         </div>
       </div>
@@ -394,12 +396,12 @@ const AutomationJobCard = (props: {
           </div>
         </div>
         <div class="rounded-xl border border-gray-4 bg-gray-2/60 px-3 py-3 space-y-2">
-          <div class="text-[10px] uppercase tracking-wide text-gray-8">Run context</div>
+          <div class="text-[10px] uppercase tracking-wide text-gray-8">{translate("scheduled.run_context")}</div>
           <div class="space-y-2 text-xs text-gray-9">
             <div class="flex items-center gap-2">
               <FolderOpen size={14} class="text-gray-8" />
               <span class="font-mono text-gray-12 break-all">
-                {props.job.workdir ?? "Default"}
+                {props.job.workdir ?? translate("scheduled.default_workdir")}
               </span>
             </div>
             <Show when={props.job.run?.attachUrl ?? props.job.attachUrl}>
@@ -411,7 +413,7 @@ const AutomationJobCard = (props: {
               </div>
             </Show>
             <Show when={props.job.source}>
-              <div class="text-[11px] text-gray-8">Source: {props.job.source}</div>
+              <div class="text-[11px] text-gray-8">{translate("scheduled.source_label")} {props.job.source}</div>
             </Show>
           </div>
         </div>
@@ -420,14 +422,14 @@ const AutomationJobCard = (props: {
       <div class="flex flex-wrap items-center gap-4 text-xs text-gray-9">
         <div class="flex items-center gap-1">
           <Clock size={12} />
-          Last run {toRelative(props.job.lastRunAt)}
+          {translate("scheduled.last_run")} {toRelative(props.job.lastRunAt)}
         </div>
-        <div>Created {toRelative(props.job.createdAt)}</div>
+        <div>{translate("scheduled.created")} {toRelative(props.job.createdAt)}</div>
         <Show when={props.job.run?.agent}>
-          <div>Agent {props.job.run?.agent}</div>
+          <div>{translate("scheduled.agent")} {props.job.run?.agent}</div>
         </Show>
         <Show when={props.job.run?.model}>
-          <div>Model {props.job.run?.model}</div>
+          <div>{translate("scheduled.model")} {props.job.run?.model}</div>
         </Show>
       </div>
     </div>
@@ -436,6 +438,7 @@ const AutomationJobCard = (props: {
 
 export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
   const platform = usePlatform();
+  const translate = (key: string) => t(key, currentLocale());
   const [installingScheduler, setInstallingScheduler] = createSignal(false);
   const [schedulerInstallRequested, setSchedulerInstallRequested] = createSignal(false);
   const supported = createMemo(() => {
@@ -456,36 +459,36 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
   const automationDisabled = createMemo(() => props.newTaskDisabled || schedulerGateActive());
   const supportNote = createMemo(() => {
     if (props.source === "remote") {
-      return props.sourceReady ? null : "OpenWork server unavailable. Connect to sync scheduled tasks.";
+      return props.sourceReady ? null : translate("scheduled.support.remote_unavailable");
     }
-    if (!isTauriRuntime()) return "Scheduled tasks require the desktop app.";
-    if (props.isWindows) return "Scheduler is not supported on Windows yet.";
+    if (!isTauriRuntime()) return translate("scheduled.support.desktop_required");
+    if (props.isWindows) return translate("scheduled.support.windows_unsupported");
     if (!props.schedulerInstalled || schedulerInstallRequested()) return null;
     return null;
   });
   const sourceDescription = createMemo(() =>
     props.source === "remote"
-      ? "Automations that run on a schedule from the connected OpenWork server."
-      : "Automations that run on a schedule from this device."
+      ? translate("scheduled.source.remote_description")
+      : translate("scheduled.source.local_description")
   );
   const sourceLabel = createMemo(() =>
-    props.source === "remote" ? "From OpenWork server" : "From local scheduler"
+    props.source === "remote" ? translate("scheduled.source.remote_label") : translate("scheduled.source.local_label")
   );
-  const schedulerLabel = createMemo(() => (props.source === "remote" ? "OpenWork server" : "Local"));
+  const schedulerLabel = createMemo(() => (props.source === "remote" ? translate("scheduled.scheduler.remote_label") : translate("scheduled.scheduler.local_label")));
   const schedulerHint = createMemo(() =>
-    props.source === "remote" ? "Remote instance" : "Launchd or systemd"
+    props.source === "remote" ? translate("scheduled.scheduler.remote_hint") : translate("scheduled.scheduler.local_hint")
   );
   const schedulerUnavailableHint = createMemo(() =>
-    props.source === "remote" ? "OpenWork server unavailable" : "Desktop-only"
+    props.source === "remote" ? translate("scheduled.scheduler.remote_unavailable") : translate("scheduled.scheduler.desktop_only")
   );
   const deleteDescription = createMemo(() =>
     props.source === "remote"
-      ? "This removes the schedule and deletes the job definition from the connected OpenWork server."
-      : "This removes the schedule and deletes the job definition from your machine."
+      ? translate("scheduled.delete.remote_description")
+      : translate("scheduled.delete.local_description")
   );
 
   const lastUpdatedLabel = createMemo(() => {
-    if (!props.lastUpdatedAt) return "Not synced yet";
+    if (!props.lastUpdatedAt) return translate("scheduled.last_synced_never");
     return formatRelativeTime(props.lastUpdatedAt);
   });
 
@@ -656,7 +659,7 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
           }`}
         >
           <RefreshCw size={14} />
-          {props.busy ? "Refreshing" : "Refresh"}
+          {props.busy ? translate("scheduled.refreshing") : translate("scheduled.refresh")}
         </button>
         <button
           type="button"
@@ -811,10 +814,10 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
               </div>
               <div class="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteBusy()}>
-                  Cancel
+                  {translate("scheduled.cancel")}
                 </Button>
                 <Button variant="danger" onClick={confirmDelete} disabled={deleteBusy()}>
-                  {deleteBusy() ? "Deleting" : "Delete"}
+                  {deleteBusy() ? translate("scheduled.deleting") : translate("scheduled.delete")}
                 </Button>
               </div>
             </div>
@@ -980,7 +983,7 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
                   onClick={() => setCreateModalOpen(false)}
                   class="px-4 py-2 text-xs font-medium text-gray-8 transition-colors hover:text-gray-12"
                 >
-                  Cancel
+                  {translate("scheduled.cancel")}
                 </button>
                 <button
                 type="button"
