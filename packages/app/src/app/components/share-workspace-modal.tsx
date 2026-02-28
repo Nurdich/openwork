@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 
 import { Boxes, Check, Copy, Download, Eye, EyeOff, FolderCode, Key, Link as LinkIcon, X } from "lucide-solid";
 
+import { currentLocale, t } from "../../i18n";
 type ShareField = {
   label: string;
   value: string;
@@ -33,6 +34,7 @@ export default function ShareWorkspaceModal(props: {
   exportDisabledReason?: string | null;
   onOpenBots?: () => void;
 }) {
+  const translate = (key: string) => t(key, currentLocale());
   const [activeTab, setActiveTab] = createSignal<"access" | "links">("access");
   const [revealedByIndex, setRevealedByIndex] = createSignal<Record<number, boolean>>({});
   const [copiedKey, setCopiedKey] = createSignal<string | null>(null);
@@ -87,8 +89,8 @@ export default function ShareWorkspaceModal(props: {
             <button
               onClick={props.onClose}
               class="absolute top-6 right-6 p-1.5 text-gray-9 hover:text-gray-12 hover:bg-gray-4 rounded-lg transition-all"
-              aria-label="Close"
-              title="Close"
+              aria-label={translate("common.close")}
+              title={translate("common.close")}
             >
               <X size={20} stroke-width={2.5} />
             </button>
