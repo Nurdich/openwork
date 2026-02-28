@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "workspace": {
+    "name": "openwork",
+    "createdAt": 1772293698646,
+    "preset": "starter"
+  },
+  "authorizedRoots": [
+    "G:\\PycharmProjects\\openwork"
+  ]
+}
