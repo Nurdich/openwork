@@ -2,6 +2,14 @@ export type WorkspaceType = "local" | "remote";
 
 export type ApprovalMode = "manual" | "auto";
 
+export type TokenScope = "owner" | "collaborator" | "viewer";
+
+export type SandboxBackend = "none" | "docker" | "container";
+
+export type ProviderPlacement = "in-sandbox" | "host-machine" | "client-machine" | "external";
+
+export type LogFormat = "pretty" | "json";
+
 export interface WorkspaceConfig {
   path: string;
   name?: string;
@@ -48,20 +56,54 @@ export interface ServerConfig {
   startedAt: number;
   tokenSource: "cli" | "env" | "file" | "generated";
   hostTokenSource: "cli" | "env" | "file" | "generated";
+  logFormat: LogFormat;
+  logRequests: boolean;
 }
 
 export interface Capabilities {
+  schemaVersion: number;
+  serverVersion: string;
   skills: { read: boolean; write: boolean; source: "openwork" | "opencode" };
+  hub: {
+    skills: {
+      read: boolean;
+      install: boolean;
+      repo: { owner: string; name: string; ref: string };
+    };
+  };
   plugins: { read: boolean; write: boolean };
   mcp: { read: boolean; write: boolean };
   commands: { read: boolean; write: boolean };
   config: { read: boolean; write: boolean };
+
+  approvals: { mode: ApprovalMode; timeoutMs: number };
+  sandbox: { enabled: boolean; backend: SandboxBackend };
+  ui: { toy: boolean };
+  tokens: { scoped: boolean; scopes: TokenScope[] };
+  proxy: {
+    opencode: boolean;
+    opencodeRouter: boolean;
+  };
+  toolProviders: {
+    browser: {
+      enabled: boolean;
+      placement: ProviderPlacement;
+      mode: "none" | "headless" | "interactive";
+    };
+    files: {
+      injection: boolean;
+      outbox: boolean;
+      inboxPath: string;
+      outboxPath: string;
+      maxBytes: number;
+    };
+  };
 }
 
-export type ReloadReason = "plugins" | "skills" | "mcp" | "config";
+export type ReloadReason = "plugins" | "skills" | "mcp" | "config" | "agents" | "commands";
 
 export type ReloadTrigger = {
-  type: "skill" | "plugin" | "config" | "mcp";
+  type: "skill" | "plugin" | "config" | "mcp" | "agent" | "command";
   name?: string;
   action?: "added" | "removed" | "updated";
   path?: string;
@@ -104,6 +146,18 @@ export interface SkillItem {
   trigger?: string;
 }
 
+export interface HubSkillItem {
+  name: string;
+  description: string;
+  trigger?: string;
+  source: {
+    owner: string;
+    repo: string;
+    ref: string;
+    path: string;
+  };
+}
+
 export interface CommandItem {
   name: string;
   description?: string;
@@ -118,6 +172,7 @@ export interface Actor {
   type: "remote" | "host";
   clientId?: string;
   tokenHash?: string;
+  scope?: TokenScope;
 }
 
 export interface ApprovalRequest {

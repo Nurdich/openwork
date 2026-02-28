@@ -1,0 +1,334 @@
+{
+  "dashboard.create_sandbox_confirm": {
+    "en": "\"dashboard.create_sandbox_confirm\": \"Create as sandbox\",",
+    "zh": "\"dashboard.create_sandbox_confirm\": \"创建为沙盒\","
+  },
+  "dashboard.sandbox_get_ready_title": {
+    "en": "\"dashboard.sandbox_get_ready_title\": \"Sandboxes need Docker\",",
+    "zh": "\"dashboard.sandbox_get_ready_title\": \"沙盒需要 Docker\","
+  },
+  "dashboard.sandbox_get_ready_action": {
+    "en": "\"dashboard.sandbox_get_ready_action\": \"Get your system ready\",",
+    "zh": "\"dashboard.sandbox_get_ready_action\": \"准备沙盒环境\","
+  },
+  "dashboard.sandbox_get_ready_desc": {
+    "en": "\"dashboard.sandbox_get_ready_desc\": \"Run this worker in an isolated Docker container for safer, more reproducible runs.\",",
+    "zh": "\"dashboard.sandbox_get_ready_desc\": \"在隔离的 Docker 容器中运行此工作区，更安全、更可复现。\","
+  },
+  "dashboard.sandbox_checking_docker": {
+    "en": "\"dashboard.sandbox_checking_docker\": \"Checking Docker...\",",
+    "zh": "\"dashboard.sandbox_checking_docker\": \"正在检查 Docker...\","
+  },
+  "dashboard.edit_remote_workspace_title": {
+    "en": "\"dashboard.edit_remote_workspace_title\": \"Edit Remote Connection\",",
+    "zh": "\"dashboard.edit_remote_workspace_title\": \"编辑远程连接\","
+  },
+  "dashboard.edit_remote_workspace_subtitle": {
+    "en": "\"dashboard.edit_remote_workspace_subtitle\": \"Update the OpenWork server details for this worker.\",",
+    "zh": "\"dashboard.edit_remote_workspace_subtitle\": \"更新此工作区的 OpenWork 服务器信息。\","
+  },
+  "dashboard.edit_remote_workspace_confirm": {
+    "en": "\"dashboard.edit_remote_workspace_confirm\": \"Save connection\",",
+    "zh": "\"dashboard.edit_remote_workspace_confirm\": \"保存连接\","
+  },
+  "workspace.rename_title": {
+    "en": "\"workspace.rename_title\": \"Edit worker name\",",
+    "zh": "\"workspace.rename_title\": \"编辑工作区名称\","
+  },
+  "workspace.rename_description": {
+    "en": "\"workspace.rename_description\": \"Update the name shown in the sidebar.\",",
+    "zh": "\"workspace.rename_description\": \"更新侧边栏中显示的名称。\","
+  },
+  "workspace.rename_label": {
+    "en": "\"workspace.rename_label\": \"Worker name\",",
+    "zh": "\"workspace.rename_label\": \"工作区名称\","
+  },
+  "workspace.rename_placeholder": {
+    "en": "\"workspace.rename_placeholder\": \"Design team worker\",",
+    "zh": "\"workspace.rename_placeholder\": \"设计团队工作区\","
+  },
+  "mcp.apps_title": {
+    "en": "\"mcp.apps_title\": \"Apps\",",
+    "zh": null
+  },
+  "mcp.apps_subtitle": {
+    "en": "\"mcp.apps_subtitle\": \"Connect your favorite tools so OpenWork can use them on your behalf.\",",
+    "zh": null
+  },
+  "mcp.app_connected": {
+    "en": "\"mcp.app_connected\": \"app connected\",",
+    "zh": null
+  },
+  "mcp.apps_connected": {
+    "en": "\"mcp.apps_connected\": \"apps connected\",",
+    "zh": null
+  },
+  "mcp.finish_setup": {
+    "en": "\"mcp.finish_setup\": \"Almost there\",",
+    "zh": null
+  },
+  "mcp.finish_setup_hint": {
+    "en": "\"mcp.finish_setup_hint\": \"Tap Activate to finish connecting your app.\",",
+    "zh": null
+  },
+  "mcp.activate_button": {
+    "en": "\"mcp.activate_button\": \"Activate\",",
+    "zh": null
+  },
+  "mcp.available_apps": {
+    "en": "\"mcp.available_apps\": \"Available apps\",",
+    "zh": null
+  },
+  "mcp.one_click_connect": {
+    "en": "\"mcp.one_click_connect\": \"One-click connect\",",
+    "zh": null
+  },
+  "mcp.tap_to_connect": {
+    "en": "\"mcp.tap_to_connect\": \"Tap to connect\",",
+    "zh": null
+  },
+  "mcp.connected_badge": {
+    "en": "\"mcp.connected_badge\": \"Connected\",",
+    "zh": null
+  },
+  "mcp.your_apps": {
+    "en": "\"mcp.your_apps\": \"Your apps\",",
+    "zh": null
+  },
+  "mcp.last_synced": {
+    "en": "\"mcp.last_synced\": \"Synced\",",
+    "zh": null
+  },
+  "mcp.no_apps_yet": {
+    "en": "\"mcp.no_apps_yet\": \"No apps connected yet\",",
+    "zh": null
+  },
+  "mcp.no_apps_hint": {
+    "en": "\"mcp.no_apps_hint\": \"Connect one above to get started.\",",
+    "zh": null
+  },
+  "mcp.config_file": {
+    "en": "\"mcp.config_file\": \"Config file\",",
+    "zh": null
+  },
+  "mcp.advanced_settings": {
+    "en": "\"mcp.advanced_settings\": \"Advanced settings\",",
+    "zh": null
+  },
+  "mcp.advanced_settings_hint": {
+    "en": "\"mcp.advanced_settings_hint\": \"Edit config files and manage connections manually.\",",
+    "zh": null
+  },
+  "mcp.app_details": {
+    "en": "\"mcp.app_details\": \"App details\",",
+    "zh": null
+  },
+  "mcp.select_app_hint": {
+    "en": "\"mcp.select_app_hint\": \"Select an app to see details.\",",
+    "zh": null
+  },
+  "mcp.connection_type": {
+    "en": "\"mcp.connection_type\": \"Connection\",",
+    "zh": null
+  },
+  "mcp.type_cloud": {
+    "en": "\"mcp.type_cloud\": \"Cloud (sign in with your account)\",",
+    "zh": null
+  },
+  "mcp.type_local": {
+    "en": "\"mcp.type_local\": \"Local (runs on this device)\",",
+    "zh": null
+  },
+  "mcp.cap_tools": {
+    "en": "\"mcp.cap_tools\": \"AI tools\",",
+    "zh": null
+  },
+  "mcp.cap_signin": {
+    "en": "\"mcp.cap_signin\": \"Account sign-in\",",
+    "zh": null
+  },
+  "mcp.issue_label": {
+    "en": "\"mcp.issue_label\": \"Issue\",",
+    "zh": null
+  },
+  "mcp.technical_details": {
+    "en": "\"mcp.technical_details\": \"Technical details\",",
+    "zh": null
+  },
+  "mcp.friendly_status_ready": {
+    "en": "\"mcp.friendly_status_ready\": \"Ready\",",
+    "zh": null
+  },
+  "mcp.friendly_status_needs_signin": {
+    "en": "\"mcp.friendly_status_needs_signin\": \"Sign in needed\",",
+    "zh": null
+  },
+  "mcp.friendly_status_paused": {
+    "en": "\"mcp.friendly_status_paused\": \"Paused\",",
+    "zh": null
+  },
+  "mcp.friendly_status_offline": {
+    "en": "\"mcp.friendly_status_offline\": \"Offline\",",
+    "zh": null
+  },
+  "mcp.friendly_status_issue": {
+    "en": "\"mcp.friendly_status_issue\": \"Issue\",",
+    "zh": null
+  },
+  "mcp.remove_app": {
+    "en": "\"mcp.remove_app\": \"Remove\",",
+    "zh": null
+  },
+  "mcp.remove_failed": {
+    "en": "\"mcp.remove_failed\": \"Couldn't remove the app.\",",
+    "zh": null
+  },
+  "mcp.remove_modal_title": {
+    "en": "\"mcp.remove_modal_title\": \"Remove app\",",
+    "zh": null
+  },
+  "mcp.remove_modal_message": {
+    "en": "\"mcp.remove_modal_message\": \"Are you sure you want to remove {server}? You can always add it back later.\",",
+    "zh": null
+  },
+  "mcp.add_modal_title": {
+    "en": "\"mcp.add_modal_title\": \"Add MCP Server\",",
+    "zh": null
+  },
+  "mcp.add_modal_subtitle": {
+    "en": "\"mcp.add_modal_subtitle\": \"Connect a custom MCP server by URL or local command.\",",
+    "zh": null
+  },
+  "mcp.server_type": {
+    "en": "\"mcp.server_type\": \"Type\",",
+    "zh": null
+  },
+  "mcp.type_remote": {
+    "en": "\"mcp.type_remote\": \"Remote (URL)\",",
+    "zh": null
+  },
+  "mcp.type_local_cmd": {
+    "en": "\"mcp.type_local_cmd\": \"Local (command)\",",
+    "zh": null
+  },
+  "mcp.server_command": {
+    "en": "\"mcp.server_command\": \"Command\",",
+    "zh": null
+  },
+  "mcp.server_command_placeholder": {
+    "en": "\"mcp.server_command_placeholder\": \"npx -y @modelcontextprotocol/server-sequential-thinking\",",
+    "zh": null
+  },
+  "mcp.server_command_hint": {
+    "en": "\"mcp.server_command_hint\": \"The shell command to start the server.\",",
+    "zh": null
+  },
+  "mcp.add_server_button": {
+    "en": "\"mcp.add_server_button\": \"Add server\",",
+    "zh": null
+  },
+  "mcp.name_required": {
+    "en": "\"mcp.name_required\": \"Enter a server name.\",",
+    "zh": null
+  },
+  "mcp.url_or_command_required": {
+    "en": "\"mcp.url_or_command_required\": \"Enter a URL for remote or a command for local servers.\",",
+    "zh": null
+  },
+  "mcp.logout_label": {
+    "en": "\"mcp.logout_label\": \"OAuth\",",
+    "zh": null
+  },
+  "mcp.logout_action": {
+    "en": "\"mcp.logout_action\": \"Log out\",",
+    "zh": null
+  },
+  "mcp.logout_working": {
+    "en": "\"mcp.logout_working\": \"Logging out...\",",
+    "zh": null
+  },
+  "mcp.logout_hint": {
+    "en": "\"mcp.logout_hint\": \"Removes stored OAuth credentials. You'll need to sign in again.\",",
+    "zh": null
+  },
+  "mcp.logout_modal_title": {
+    "en": "\"mcp.logout_modal_title\": \"Log out of this app?\",",
+    "zh": null
+  },
+  "mcp.logout_modal_message": {
+    "en": "\"mcp.logout_modal_message\": \"This will remove stored OAuth credentials for {server}. You'll need to sign in again to use this app.\",",
+    "zh": null
+  },
+  "mcp.logout_success": {
+    "en": "\"mcp.logout_success\": \"Logged out of {server}.\",",
+    "zh": null
+  },
+  "mcp.logout_failed": {
+    "en": "\"mcp.logout_failed\": \"Failed to log out.\",",
+    "zh": null
+  },
+  "settings.migration_recovery_label": {
+    "en": "\"settings.migration_recovery_label\": \"Migration recovery\",",
+    "zh": null
+  },
+  "settings.migration_recovery_hint": {
+    "en": "\"settings.migration_recovery_hint\": \"Use this if local startup fails while moving from legacy JSON data.\",",
+    "zh": null
+  },
+  "settings.fix_migration": {
+    "en": "\"settings.fix_migration\": \"Fix migration\",",
+    "zh": null
+  },
+  "settings.fixing_migration": {
+    "en": "\"settings.fixing_migration\": \"Fixing migration...\",",
+    "zh": null
+  },
+  "settings.migration_repair_requires_desktop": {
+    "en": "\"settings.migration_repair_requires_desktop\": \"Migration repair requires the desktop app\",",
+    "zh": null
+  },
+  "onboarding.fix_migration": {
+    "en": "\"onboarding.fix_migration\": \"Fix migration\",",
+    "zh": null
+  },
+  "onboarding.fixing_migration": {
+    "en": "\"onboarding.fixing_migration\": \"Fixing migration...\",",
+    "zh": null
+  },
+  "onboarding.fix_migration_hint": {
+    "en": "\"onboarding.fix_migration_hint\": \"Stops local engine, runs opencode db migrate, then retries startup.\",",
+    "zh": null
+  },
+  "status.repairing_migration": {
+    "en": "\"status.repairing_migration\": \"Repairing migration\",",
+    "zh": null
+  },
+  "app.migration.desktop_required": {
+    "en": "\"app.migration.desktop_required\": \"Migration repair requires the desktop app.\",",
+    "zh": null
+  },
+  "app.migration.local_only": {
+    "en": "\"app.migration.local_only\": \"Migration repair is only available for local workers.\",",
+    "zh": null
+  },
+  "app.migration.workspace_required": {
+    "en": "\"app.migration.workspace_required\": \"Pick a local worker folder before repairing migration.\",",
+    "zh": null
+  },
+  "app.migration.unsupported": {
+    "en": "\"app.migration.unsupported\": \"This OpenCode binary does not support `opencode db migrate`. Update OpenCode to >=1.2.6 or switch to bundled engine.\",",
+    "zh": null
+  },
+  "app.migration.failed": {
+    "en": "\"app.migration.failed\": \"OpenCode migration failed.\",",
+    "zh": null
+  },
+  "app.migration.restart_failed": {
+    "en": "\"app.migration.restart_failed\": \"Migration completed, but OpenWork could not restart the local engine.\",",
+    "zh": null
+  },
+  "app.migration.success": {
+    "en": "\"app.migration.success\": \"Migration repaired. Local startup was retried.\",",
+    "zh": null
+  }
+}

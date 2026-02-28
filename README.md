@@ -1,46 +1,34 @@
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/VEhNQXxYMB)
 
 # OpenWork
-> Make your company feel 1000× more productive.
-
-We give AI agents the tools your team already uses and let them learn from your behavior. The more you use OpenWork, the more connected your tools become, the more knowledge accumulates, and the bigger the chunks of work you can automate.
-
-OpenWork is the simplest interface to OpenCode: a desktop app for running agentic workflows across your tools without living in the terminal.
-Double-click, pick a folder, and you get three things instantly:
-1. Zero-friction setup — your existing opencode configuration just works, no migration needed
-2. Chat access — WhatsApp and Telegram ready to go (one token, done)
-3. Cloud-ready — every app doubles as a client; deploy to the cloud and access from anywhere
-> **The easiest way to create safe agentic workflows and share them with your team**
-
-It's an **extensible, open-source alternative** to “Claude Work”.
+> OpenWork helps you run your agents, skills, and MCP. It's an open-source alternative to Claude Cowork/Codex (desktop app).
 
 
-<img width="1292" height="932" alt="Screenshot 2026-01-31 at 16 22 39" src="https://github.com/user-attachments/assets/5742be91-9cfb-4212-b32d-cf2a27b1c093" />
+  
+## Core Philosophy
+- Local-first, cloud-ready: OpenWork runs on your machine in one click. Send a message instantly.
+- Composable: desktop app, WhatsApp/Slack/Telegram connector, or server. Use what fits, no lock-in.
+- Ejectable: OpenWork is powered by OpenCode, so everything OpenCode can do works in OpenWork, even without a UI yet.
+- Sharing is caring: start solo, then share. One CLI or desktop command spins up an instantly shareable instance.
 
-
-<img width="1292" height="932" alt="Screenshot 2026-01-31 at 13 43 30" src="https://github.com/user-attachments/assets/6639d1ef-c831-406e-a812-87fde403e6d5" />
+<p align="center">
+  <img src="./app-demo.gif" alt="OpenWork demo" width="800" />
+</p>
 
 
 OpenWork is designed around the idea that you can easily ship your agentic workflows as a repeatable, productized process.
 
-It’s a native desktop app that runs **OpenCode** under the hood, but presents it as a clean, guided workflow:
-- pick a workspace
-- start a run
-- watch progress + plan updates
-- approve permissions when needed
-- reuse what works (commands + skills)
-
-The goal: make “agentic work” feel like a product, not a terminal.
-
 
 ## Alternate UIs
 
-- **Owpenbot (WhatsApp bot)**: a lightweight WhatsApp bridge for a running OpenCode server. Install with:
-  - `curl -fsSL https://raw.githubusercontent.com/different-ai/owpenbot/dev/install.sh | bash`
-  - run `owpenbot setup`, then `owpenbot whatsapp login`, then `owpenbot start`
-  - full setup: https://github.com/different-ai/owpenbot/blob/dev/README.md
-- **Openwrk (CLI host)**: run OpenCode + OpenWork server without the desktop UI. Install with `npm install -g openwrk`.
-  - docs: [packages/headless/README.md](./packages/headless/README.md)
+- **OpenCode Router (WhatsApp bot)**: a lightweight WhatsApp bridge for a running OpenCode server. Install with:
+  - `curl -fsSL https://raw.githubusercontent.com/different-ai/opencode-router/dev/install.sh | bash`
+  - run `opencode-router setup`, then `opencode-router whatsapp login`, then `opencode-router start`
+  - full setup: https://github.com/different-ai/opencode-router/blob/dev/README.md
+- **OpenWork Orchestrator (CLI host)**: run OpenCode + OpenWork server without the desktop UI.
+  - install: `npm install -g openwork-orchestrator`
+  - run: `openwork start --workspace /path/to/workspace --approval auto`
+  - docs: [packages/orchestrator/README.md](./packages/orchestrator/README.md)
 
 
 ## Quick start
@@ -116,12 +104,12 @@ yay -s opencode # Releases version
 
 ## Architecture (high-level)
 
-- In **Host mode**, OpenWork spawns:
-  - `opencode serve --hostname 127.0.0.1 --port <free-port>`
-  - with your selected project folder as the process working directory.
-In Host mode, OpenWork starts an OpenCode server directly on your own computer in the background.
-When you select a project folder, OpenWork runs OpenCode locally using that folder and connects the desktop UI to it.
-This allows you to run agentic workflows, send prompts, and see progress entirely on your machine without relying on a remote server.
+- In **Host mode**, OpenWork runs a local host stack and connects the UI to it.
+  - Default runtime: `openwork` (installed from `openwork-orchestrator`), which orchestrates `opencode`, `openwork-server`, and optionally `opencode-router`.
+  - Fallback runtime: `direct`, where the desktop app spawns `opencode serve --hostname 127.0.0.1 --port <free-port>` directly.
+
+When you select a project folder, OpenWork runs the host stack locally using that folder and connects the desktop UI.
+This lets you run agentic workflows, send prompts, and see progress entirely on your machine without a remote server.
 
 - The UI uses `@opencode-ai/sdk/v2/client` to:
   - connect to the server

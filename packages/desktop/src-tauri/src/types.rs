@@ -7,6 +7,8 @@ pub struct WorkspaceOpenworkConfig {
     pub workspace: Option<WorkspaceOpenworkWorkspace>,
     #[serde(default, alias = "authorizedRoots")]
     pub authorized_roots: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reload: Option<WorkspaceOpenworkReload>,
 }
 
 impl Default for WorkspaceOpenworkConfig {
@@ -15,8 +17,16 @@ impl Default for WorkspaceOpenworkConfig {
             version: 1,
             workspace: None,
             authorized_roots: Vec::new(),
+            reload: None,
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceOpenworkReload {
+    pub auto: Option<bool>,
+    pub resume: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,6 +56,7 @@ impl WorkspaceOpenworkConfig {
                 preset: Some(preset.to_string()),
             }),
             authorized_roots: vec![workspace_path.to_string()],
+            reload: None,
         }
     }
 }
@@ -54,7 +65,8 @@ impl WorkspaceOpenworkConfig {
 #[serde(rename_all = "lowercase")]
 pub enum EngineRuntime {
     Direct,
-    Openwrk,
+    #[serde(rename = "openwork-orchestrator")]
+    Orchestrator,
 }
 
 impl Default for EngineRuntime {
@@ -98,7 +110,7 @@ pub struct OpenworkServerInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkDaemonState {
+pub struct OrchestratorDaemonState {
     pub pid: u32,
     pub port: u16,
     pub base_url: String,
@@ -107,7 +119,7 @@ pub struct OpenwrkDaemonState {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkOpencodeState {
+pub struct OrchestratorOpencodeState {
     pub pid: u32,
     pub port: u16,
     pub base_url: String,
@@ -116,7 +128,7 @@ pub struct OpenwrkOpencodeState {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkBinaryInfo {
+pub struct OrchestratorBinaryInfo {
     pub path: String,
     pub source: String,
     pub expected_version: Option<String>,
@@ -125,13 +137,13 @@ pub struct OpenwrkBinaryInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkBinaryState {
-    pub opencode: Option<OpenwrkBinaryInfo>,
+pub struct OrchestratorBinaryState {
+    pub opencode: Option<OrchestratorBinaryInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkSidecarInfo {
+pub struct OrchestratorSidecarInfo {
     pub dir: Option<String>,
     pub base_url: Option<String>,
     pub manifest_url: Option<String>,
@@ -143,7 +155,7 @@ pub struct OpenwrkSidecarInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkWorkspace {
+pub struct OrchestratorWorkspace {
     pub id: String,
     pub name: String,
     pub path: String,
@@ -156,30 +168,27 @@ pub struct OpenwrkWorkspace {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenwrkStatus {
+pub struct OrchestratorStatus {
     pub running: bool,
     pub data_dir: String,
-    pub daemon: Option<OpenwrkDaemonState>,
-    pub opencode: Option<OpenwrkOpencodeState>,
+    pub daemon: Option<OrchestratorDaemonState>,
+    pub opencode: Option<OrchestratorOpencodeState>,
     pub cli_version: Option<String>,
-    pub sidecar: Option<OpenwrkSidecarInfo>,
-    pub binaries: Option<OpenwrkBinaryState>,
+    pub sidecar: Option<OrchestratorSidecarInfo>,
+    pub binaries: Option<OrchestratorBinaryState>,
     pub active_id: Option<String>,
     pub workspace_count: usize,
-    pub workspaces: Vec<OpenwrkWorkspace>,
+    pub workspaces: Vec<OrchestratorWorkspace>,
     pub last_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct OwpenbotInfo {
+pub struct OpenCodeRouterInfo {
     pub running: bool,
     pub version: Option<String>,
     pub workspace_path: Option<String>,
     pub opencode_url: Option<String>,
-    pub qr_data: Option<String>,
-    pub whatsapp_linked: bool,
-    pub telegram_configured: bool,
     pub pid: Option<u32>,
     pub last_stdout: Option<String>,
     pub last_stderr: Option<String>,
@@ -248,6 +257,8 @@ pub struct ScheduledJobRun {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledJob {
+    pub scope_id: Option<String>,
+    pub timeout_seconds: Option<i32>,
     pub slug: String,
     pub name: String,
     pub schedule: String,
@@ -311,9 +322,19 @@ pub struct WorkspaceInfo {
     #[serde(default)]
     pub openwork_host_url: Option<String>,
     #[serde(default)]
+    pub openwork_token: Option<String>,
+    #[serde(default)]
     pub openwork_workspace_id: Option<String>,
     #[serde(default)]
     pub openwork_workspace_name: Option<String>,
+
+    // Sandbox lifecycle metadata (desktop-managed)
+    #[serde(default)]
+    pub sandbox_backend: Option<String>,
+    #[serde(default)]
+    pub sandbox_run_id: Option<String>,
+    #[serde(default)]
+    pub sandbox_container_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -361,4 +382,4 @@ impl Default for WorkspaceState {
     }
 }
 
-pub const WORKSPACE_STATE_VERSION: u8 = 3;
+pub const WORKSPACE_STATE_VERSION: u8 = 4;

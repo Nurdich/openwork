@@ -27,9 +27,27 @@ const readArg = (name) => {
   if (index >= 0 && raw[index + 1]) return raw[index + 1];
   return null;
 };
+
+const hasFlag = (name) => process.argv.slice(2).includes(name);
+const forceBuild = hasFlag("--force") || process.env.OPENWORK_SIDECAR_FORCE_BUILD === "1";
 const sidecarOverride = process.env.OPENWORK_SIDECAR_DIR?.trim() || readArg("--outdir");
 const sidecarDir = sidecarOverride ? resolve(sidecarOverride) : join(__dirname, "..", "src-tauri", "sidecars");
 const packageJsonPath = resolve(__dirname, "..", "package.json");
+
+const opencodeGithubRepo = (() => {
+  const raw =
+    process.env.OPENCODE_GITHUB_REPO?.trim() ||
+    process.env.OPENWORK_OPENCODE_GITHUB_REPO?.trim() ||
+    "anomalyco/opencode";
+  const normalized = raw
+    .replace(/^https:\/\/github\.com\//i, "")
+    .replace(/\.git$/i, "")
+    .trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+    return "anomalyco/opencode";
+  }
+  return normalized;
+})();
 const opencodeVersion = (() => {
   if (process.env.OPENCODE_VERSION?.trim()) return process.env.OPENCODE_VERSION.trim();
   try {
@@ -41,18 +59,53 @@ const opencodeVersion = (() => {
   }
   return null;
 })();
+
+const normalizeVersion = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (raw.toLowerCase() === "latest") return null;
+  return raw.startsWith("v") ? raw.slice(1) : raw;
+};
+
+const fetchLatestOpencodeVersion = async () => {
+  // Use GitHub API (no auth required). If this fails, the caller can fall back
+  // to an explicitly configured version via OPENCODE_VERSION.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`https://api.github.com/repos/${opencodeGithubRepo}/releases/latest`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const tagName = typeof data?.tag_name === "string" ? data.tag_name : "";
+    return normalizeVersion(tagName);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 const opencodeAssetOverride = process.env.OPENCODE_ASSET?.trim() || null;
-const owpenbotVersion = (() => {
-  if (process.env.OWPENBOT_VERSION?.trim()) return process.env.OWPENBOT_VERSION.trim();
+const opencodeRouterVersion = (() => {
+  if (process.env.OPENCODE_ROUTER_VERSION?.trim()) return process.env.OPENCODE_ROUTER_VERSION.trim();
   try {
     const raw = readFileSync(packageJsonPath, "utf8");
     const pkg = JSON.parse(raw);
-    if (pkg.owpenbotVersion) return String(pkg.owpenbotVersion).trim();
+    if (pkg.opencodeRouterVersion) return String(pkg.opencodeRouterVersion).trim();
   } catch {
     // ignore
   }
   return null;
 })();
+const chromeDevtoolsMcpVersion =
+  process.env.CHROME_DEVTOOLS_MCP_VERSION?.trim() ||
+  process.env.OPENWORK_CHROME_DEVTOOLS_MCP_VERSION?.trim() ||
+  "0.17.0";
 
 // Target triple for native platform binaries
 const resolvedTargetTriple = (() => {
@@ -78,11 +131,13 @@ const bunTarget = (() => {
     case "aarch64-apple-darwin":
       return "bun-darwin-arm64";
     case "x86_64-apple-darwin":
-      return "bun-darwin-x64";
+      return "bun-darwin-x64-baseline";
     case "aarch64-unknown-linux-gnu":
       return "bun-linux-arm64";
     case "x86_64-unknown-linux-gnu":
-      return "bun-linux-x64";
+      return "bun-linux-x64-baseline";
+    // Windows baseline artifacts intermittently fail to extract in CI
+    // with Bun 1.3.6. Use the stable x64 target here for now.
     case "x86_64-pc-windows-msvc":
       return "bun-windows-x64";
     default:
@@ -96,6 +151,9 @@ const opencodeTargetName = resolvedTargetTriple
   ? `opencode-${resolvedTargetTriple}${process.platform === "win32" ? ".exe" : ""}`
   : null;
 const opencodeTargetPath = opencodeTargetName ? join(sidecarDir, opencodeTargetName) : null;
+
+const opencodeCandidatePath = opencodeTargetPath ?? opencodePath;
+let existingOpencodeVersion = null;
 
 // openwork-server paths
 const openworkServerBaseName = "openwork-server";
@@ -121,35 +179,51 @@ const resolveBuildScript = (dir) => {
   return scriptPath;
 };
 
-// owpenbot paths
-const owpenbotBaseName = "owpenbot";
-const owpenbotName = process.platform === "win32" ? `${owpenbotBaseName}.exe` : owpenbotBaseName;
-const owpenbotPath = join(sidecarDir, owpenbotName);
-const owpenbotBuildName = bunTarget
-  ? `${owpenbotBaseName}-${bunTarget}${bunTarget.includes("windows") ? ".exe" : ""}`
-  : owpenbotName;
-const owpenbotBuildPath = join(sidecarDir, owpenbotBuildName);
-const owpenbotTargetTriple = resolvedTargetTriple;
-const owpenbotTargetName = owpenbotTargetTriple
-  ? `${owpenbotBaseName}-${owpenbotTargetTriple}${owpenbotTargetTriple.includes("windows") ? ".exe" : ""}`
+// opencode-router paths
+const opencodeRouterBaseName = "opencode-router";
+const opencodeRouterName = process.platform === "win32" ? `${opencodeRouterBaseName}.exe` : opencodeRouterBaseName;
+const opencodeRouterPath = join(sidecarDir, opencodeRouterName);
+const opencodeRouterBuildName = bunTarget
+  ? `${opencodeRouterBaseName}-${bunTarget}${bunTarget.includes("windows") ? ".exe" : ""}`
+  : opencodeRouterName;
+const opencodeRouterBuildPath = join(sidecarDir, opencodeRouterBuildName);
+const opencodeRouterTargetTriple = resolvedTargetTriple;
+const opencodeRouterTargetName = opencodeRouterTargetTriple
+  ? `${opencodeRouterBaseName}-${opencodeRouterTargetTriple}${opencodeRouterTargetTriple.includes("windows") ? ".exe" : ""}`
   : null;
-const owpenbotTargetPath = owpenbotTargetName ? join(sidecarDir, owpenbotTargetName) : null;
-const owpenbotDir = resolve(__dirname, "..", "..", "owpenbot");
+const opencodeRouterTargetPath = opencodeRouterTargetName ? join(sidecarDir, opencodeRouterTargetName) : null;
+const opencodeRouterDir = resolve(__dirname, "..", "..", "opencode-router");
 
-// openwrk paths
-const openwrkBaseName = "openwrk";
-const openwrkName = process.platform === "win32" ? `${openwrkBaseName}.exe` : openwrkBaseName;
-const openwrkPath = join(sidecarDir, openwrkName);
-const openwrkBuildName = bunTarget
-  ? `${openwrkBaseName}-${bunTarget}${bunTarget.includes("windows") ? ".exe" : ""}`
-  : openwrkName;
-const openwrkBuildPath = join(sidecarDir, openwrkBuildName);
-const openwrkTargetTriple = resolvedTargetTriple;
-const openwrkTargetName = openwrkTargetTriple
-  ? `${openwrkBaseName}-${openwrkTargetTriple}${openwrkTargetTriple.includes("windows") ? ".exe" : ""}`
+// orchestrator paths
+const orchestratorBaseName = "openwork-orchestrator";
+const orchestratorName =
+  process.platform === "win32" ? `${orchestratorBaseName}.exe` : orchestratorBaseName;
+const orchestratorPath = join(sidecarDir, orchestratorName);
+const orchestratorBuildName = bunTarget
+  ? `${orchestratorBaseName}-${bunTarget}${bunTarget.includes("windows") ? ".exe" : ""}`
+  : orchestratorName;
+const orchestratorBuildPath = join(sidecarDir, orchestratorBuildName);
+const orchestratorTargetTriple = resolvedTargetTriple;
+const orchestratorTargetName = orchestratorTargetTriple
+  ? `${orchestratorBaseName}-${orchestratorTargetTriple}${orchestratorTargetTriple.includes("windows") ? ".exe" : ""}`
   : null;
-const openwrkTargetPath = openwrkTargetName ? join(sidecarDir, openwrkTargetName) : null;
-const openwrkDir = resolve(__dirname, "..", "..", "headless");
+const orchestratorTargetPath = orchestratorTargetName ? join(sidecarDir, orchestratorTargetName) : null;
+const orchestratorDir = resolve(__dirname, "..", "..", "orchestrator");
+
+// chrome-devtools-mcp shim sidecar
+const chromeDevtoolsBaseName = "chrome-devtools-mcp";
+const chromeDevtoolsName = process.platform === "win32" ? `${chromeDevtoolsBaseName}.exe` : chromeDevtoolsBaseName;
+const chromeDevtoolsPath = join(sidecarDir, chromeDevtoolsName);
+const chromeDevtoolsBuildName = bunTarget
+  ? `${chromeDevtoolsBaseName}-${bunTarget}${bunTarget.includes("windows") ? ".exe" : ""}`
+  : chromeDevtoolsName;
+const chromeDevtoolsBuildPath = join(sidecarDir, chromeDevtoolsBuildName);
+const chromeDevtoolsTargetTriple = resolvedTargetTriple;
+const chromeDevtoolsTargetName = chromeDevtoolsTargetTriple
+  ? `${chromeDevtoolsBaseName}-${chromeDevtoolsTargetTriple}${chromeDevtoolsTargetTriple.includes("windows") ? ".exe" : ""}`
+  : null;
+const chromeDevtoolsTargetPath = chromeDevtoolsTargetName ? join(sidecarDir, chromeDevtoolsTargetName) : null;
+const chromeDevtoolsShimPath = resolve(__dirname, "chrome-devtools-mcp-shim.ts");
 
 const readHeader = (filePath, length = 256) => {
   const fd = openSync(filePath, "r");
@@ -205,11 +279,11 @@ const findOpencodeBinary = (dir) => {
   );
 };
 
-const findOwpenbotBinary = (dir) => {
+const findOpenCodeRouterBinary = (dir) => {
   const candidates = readDirectory(dir);
   return (
-    candidates.find((file) => file.endsWith(`/${owpenbotName}`) || file.endsWith(`\\${owpenbotName}`)) ??
-    candidates.find((file) => file.endsWith("/owpenbot") || file.endsWith("\\owpenbot")) ??
+    candidates.find((file) => file.endsWith(`/${opencodeRouterName}`) || file.endsWith(`\\${opencodeRouterName}`)) ??
+    candidates.find((file) => file.endsWith("/opencode-router") || file.endsWith("\\opencodeRouter")) ??
     null
   );
 };
@@ -244,8 +318,9 @@ const parseChecksum = (content, assetName) => {
   return null;
 };
 
+let didBuildOpenworkServer = false;
 const shouldBuildOpenworkServer =
-  !existsSync(openworkServerBuildPath) || isStubBinary(openworkServerBuildPath);
+  forceBuild || !existsSync(openworkServerBuildPath) || isStubBinary(openworkServerBuildPath);
 
 if (shouldBuildOpenworkServer) {
   mkdirSync(sidecarDir, { recursive: true });
@@ -268,15 +343,18 @@ if (shouldBuildOpenworkServer) {
   const buildResult = spawnSync("bun", openworkServerArgs, {
     cwd: openworkServerDir,
     stdio: "inherit",
+    shell: true,
   });
 
   if (buildResult.status !== 0) {
     process.exit(buildResult.status ?? 1);
   }
+
+  didBuildOpenworkServer = true;
 }
 
 if (existsSync(openworkServerBuildPath)) {
-  const shouldCopyCanonical = !existsSync(openworkServerPath) || isStubBinary(openworkServerPath);
+  const shouldCopyCanonical = didBuildOpenworkServer || !existsSync(openworkServerPath) || isStubBinary(openworkServerPath);
   if (shouldCopyCanonical && openworkServerBuildPath !== openworkServerPath) {
     try {
       if (existsSync(openworkServerPath)) {
@@ -289,7 +367,8 @@ if (existsSync(openworkServerBuildPath)) {
   }
 
   if (openworkServerTargetPath) {
-    const shouldCopyTarget = !existsSync(openworkServerTargetPath) || isStubBinary(openworkServerTargetPath);
+    const shouldCopyTarget =
+      didBuildOpenworkServer || !existsSync(openworkServerTargetPath) || isStubBinary(openworkServerTargetPath);
     if (shouldCopyTarget && openworkServerBuildPath !== openworkServerTargetPath) {
       try {
         if (existsSync(openworkServerTargetPath)) {
@@ -303,13 +382,29 @@ if (existsSync(openworkServerBuildPath)) {
   }
 }
 
-const normalizedOpencodeVersion = opencodeVersion?.startsWith("v")
-  ? opencodeVersion.slice(1)
-  : opencodeVersion;
+if (!existingOpencodeVersion && opencodeCandidatePath) {
+  existingOpencodeVersion =
+    existsSync(opencodeCandidatePath) && !isStubBinary(opencodeCandidatePath)
+      ? readBinaryVersion(opencodeCandidatePath)
+      : null;
+}
+
+// Prefer an explicitly pinned version. Otherwise, follow latest.
+const pinnedOpencodeVersion = normalizeVersion(opencodeVersion);
+let normalizedOpencodeVersion = pinnedOpencodeVersion;
+
+if (!normalizedOpencodeVersion) {
+  normalizedOpencodeVersion = await fetchLatestOpencodeVersion();
+}
+
+// If GitHub is unreachable, fall back to whatever we already have.
+if (!normalizedOpencodeVersion && existingOpencodeVersion) {
+  normalizedOpencodeVersion = normalizeVersion(existingOpencodeVersion);
+}
 
 if (!normalizedOpencodeVersion) {
   console.error(
-    "OpenCode version is not configured. Set OPENCODE_VERSION or add opencodeVersion to packages/desktop/package.json."
+    "OpenCode version could not be resolved. Set OPENCODE_VERSION to pin a version, or ensure GitHub is reachable to use latest."
   );
   process.exit(1);
 }
@@ -327,14 +422,8 @@ const opencodeAsset =
   opencodeAssetOverride ?? (resolvedTargetTriple ? opencodeAssetByTarget[resolvedTargetTriple] : null);
 
 const opencodeUrl = opencodeAsset
-  ? `https://github.com/anomalyco/opencode/releases/download/v${normalizedOpencodeVersion}/${opencodeAsset}`
+  ? `https://github.com/${opencodeGithubRepo}/releases/download/v${normalizedOpencodeVersion}/${opencodeAsset}`
   : null;
-
-const opencodeCandidatePath = opencodeTargetPath ?? opencodePath;
-const existingOpencodeVersion =
-  opencodeCandidatePath && existsSync(opencodeCandidatePath)
-    ? readBinaryVersion(opencodeCandidatePath)
-    : null;
 
 const shouldDownloadOpencode =
   !opencodeCandidatePath ||
@@ -434,120 +523,220 @@ if (shouldDownloadOpencode) {
   console.log(`OpenCode sidecar updated to ${normalizedOpencodeVersion}.`);
 }
 
-const owpenbotPkgRaw = readFileSync(resolve(owpenbotDir, "package.json"), "utf8");
-const owpenbotPkg = JSON.parse(owpenbotPkgRaw);
-const owpenbotPkgVersion = String(owpenbotPkg.version ?? "").trim();
-const normalizedOwpenbotVersion = owpenbotVersion?.startsWith("v")
-  ? owpenbotVersion.slice(1)
-  : owpenbotVersion;
-const expectedOwpenbotVersion = normalizedOwpenbotVersion || owpenbotPkgVersion;
+const opencodeRouterPkgRaw = readFileSync(resolve(opencodeRouterDir, "package.json"), "utf8");
+const opencodeRouterPkg = JSON.parse(opencodeRouterPkgRaw);
+const opencodeRouterPkgVersion = String(opencodeRouterPkg.version ?? "").trim();
+const normalizedOpenCodeRouterVersion = opencodeRouterVersion?.startsWith("v")
+  ? opencodeRouterVersion.slice(1)
+  : opencodeRouterVersion;
+const expectedOpenCodeRouterVersion = normalizedOpenCodeRouterVersion || opencodeRouterPkgVersion;
 
-if (!expectedOwpenbotVersion) {
-  console.error("Owpenbot version missing. Set owpenbotVersion or ensure package.json has version.");
+if (!expectedOpenCodeRouterVersion) {
+  console.error("OpenCodeRouter version missing. Set opencodeRouterVersion or ensure package.json has version.");
   process.exit(1);
 }
 
-if (normalizedOwpenbotVersion && owpenbotPkgVersion && normalizedOwpenbotVersion !== owpenbotPkgVersion) {
-  console.error(`Owpenbot version mismatch: desktop=${normalizedOwpenbotVersion}, package=${owpenbotPkgVersion}`);
+if (normalizedOpenCodeRouterVersion && opencodeRouterPkgVersion && normalizedOpenCodeRouterVersion !== opencodeRouterPkgVersion) {
+  console.error(`OpenCodeRouter version mismatch: desktop=${normalizedOpenCodeRouterVersion}, package=${opencodeRouterPkgVersion}`);
   process.exit(1);
 }
 
-const shouldBuildOwpenbot = !existsSync(owpenbotBuildPath) || isStubBinary(owpenbotBuildPath);
-if (shouldBuildOwpenbot) {
+let didBuildOpenCodeRouter = false;
+const shouldBuildOpenCodeRouter = forceBuild || !existsSync(opencodeRouterBuildPath) || isStubBinary(opencodeRouterBuildPath);
+if (shouldBuildOpenCodeRouter) {
   mkdirSync(sidecarDir, { recursive: true });
-  if (existsSync(owpenbotBuildPath)) {
+  if (existsSync(opencodeRouterBuildPath)) {
     try {
-      unlinkSync(owpenbotBuildPath);
+      unlinkSync(opencodeRouterBuildPath);
     } catch {
       // ignore
     }
   }
-  const owpenbotScript = resolveBuildScript(owpenbotDir);
-  if (!existsSync(owpenbotScript)) {
-    console.error(`Owpenbot build script not found at ${owpenbotScript}`);
+  const opencodeRouterScript = resolveBuildScript(opencodeRouterDir);
+  if (!existsSync(opencodeRouterScript)) {
+    console.error(`OpenCodeRouter build script not found at ${opencodeRouterScript}`);
     process.exit(1);
   }
-  const owpenbotArgs = [owpenbotScript, "--outdir", sidecarDir, "--filename", "owpenbot"];
+  const opencodeRouterArgs = [opencodeRouterScript, "--outdir", sidecarDir, "--filename", "opencode-router"];
   if (bunTarget) {
-    owpenbotArgs.push("--target", bunTarget);
+    opencodeRouterArgs.push("--target", bunTarget);
   }
-  const result = spawnSync("bun", owpenbotArgs, { cwd: owpenbotDir, stdio: "inherit" });
+  const result = spawnSync("bun", opencodeRouterArgs, { cwd: opencodeRouterDir, stdio: "inherit", shell: true });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+
+  didBuildOpenCodeRouter = true;
 }
 
-if (existsSync(owpenbotBuildPath)) {
-  const shouldCopyCanonical = !existsSync(owpenbotPath) || isStubBinary(owpenbotPath);
-  if (shouldCopyCanonical && owpenbotBuildPath !== owpenbotPath) {
+if (existsSync(opencodeRouterBuildPath)) {
+  const shouldCopyCanonical = didBuildOpenCodeRouter || !existsSync(opencodeRouterPath) || isStubBinary(opencodeRouterPath);
+  if (shouldCopyCanonical && opencodeRouterBuildPath !== opencodeRouterPath) {
     try {
-      if (existsSync(owpenbotPath)) unlinkSync(owpenbotPath);
+      if (existsSync(opencodeRouterPath)) unlinkSync(opencodeRouterPath);
     } catch {
       // ignore
     }
-    copyFileSync(owpenbotBuildPath, owpenbotPath);
+    copyFileSync(opencodeRouterBuildPath, opencodeRouterPath);
   }
 
-  if (owpenbotTargetPath) {
-    const shouldCopyTarget = !existsSync(owpenbotTargetPath) || isStubBinary(owpenbotTargetPath);
-    if (shouldCopyTarget && owpenbotBuildPath !== owpenbotTargetPath) {
+  if (opencodeRouterTargetPath) {
+    const shouldCopyTarget = didBuildOpenCodeRouter || !existsSync(opencodeRouterTargetPath) || isStubBinary(opencodeRouterTargetPath);
+    if (shouldCopyTarget && opencodeRouterBuildPath !== opencodeRouterTargetPath) {
       try {
-        if (existsSync(owpenbotTargetPath)) unlinkSync(owpenbotTargetPath);
+        if (existsSync(opencodeRouterTargetPath)) unlinkSync(opencodeRouterTargetPath);
       } catch {
         // ignore
       }
-      copyFileSync(owpenbotBuildPath, owpenbotTargetPath);
+      copyFileSync(opencodeRouterBuildPath, opencodeRouterTargetPath);
     }
   }
 }
 
-// Build openwrk sidecar
-const shouldBuildOpenwrk = !existsSync(openwrkBuildPath) || isStubBinary(openwrkBuildPath);
-if (shouldBuildOpenwrk) {
+// Build orchestrator sidecar
+let didBuildOrchestrator = false;
+const shouldBuildOrchestrator =
+  forceBuild || !existsSync(orchestratorBuildPath) || isStubBinary(orchestratorBuildPath);
+if (shouldBuildOrchestrator) {
   mkdirSync(sidecarDir, { recursive: true });
-  if (existsSync(openwrkBuildPath)) {
+  if (existsSync(orchestratorBuildPath)) {
     try {
-      unlinkSync(openwrkBuildPath);
+      unlinkSync(orchestratorBuildPath);
     } catch {
       // ignore
     }
   }
-  // openwrk uses bun build --compile directly
-  const openwrkCliPath = resolve(openwrkDir, "src", "cli.ts");
-  if (!existsSync(openwrkCliPath)) {
-    console.error(`Openwrk CLI source not found at ${openwrkCliPath}`);
+  const orchestratorBuildScript = resolveBuildScript(orchestratorDir);
+  if (!existsSync(orchestratorBuildScript)) {
+    console.error(`Orchestrator build script not found at ${orchestratorBuildScript}`);
     process.exit(1);
   }
-  const openwrkArgs = ["build", "--compile", openwrkCliPath, "--outfile", openwrkBuildPath];
+  const orchestratorArgs = [
+    orchestratorBuildScript,
+    "--outdir",
+    sidecarDir,
+    "--filename",
+    orchestratorBaseName,
+  ];
   if (bunTarget) {
-    openwrkArgs.push("--target", bunTarget);
+    orchestratorArgs.push("--target", bunTarget);
   }
-  const result = spawnSync("bun", openwrkArgs, { cwd: openwrkDir, stdio: "inherit" });
+  const result = spawnSync("bun", orchestratorArgs, {
+    cwd: orchestratorDir,
+    stdio: "inherit",
+    shell: true,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      BUN_ENV: "production",
+    },
+  });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+
+  didBuildOrchestrator = true;
 }
 
-if (existsSync(openwrkBuildPath)) {
-  const shouldCopyCanonical = !existsSync(openwrkPath) || isStubBinary(openwrkPath);
-  if (shouldCopyCanonical && openwrkBuildPath !== openwrkPath) {
+if (existsSync(orchestratorBuildPath)) {
+  const shouldCopyCanonical =
+    didBuildOrchestrator || !existsSync(orchestratorPath) || isStubBinary(orchestratorPath);
+  if (shouldCopyCanonical && orchestratorBuildPath !== orchestratorPath) {
     try {
-      if (existsSync(openwrkPath)) unlinkSync(openwrkPath);
+      if (existsSync(orchestratorPath)) unlinkSync(orchestratorPath);
     } catch {
       // ignore
     }
-    copyFileSync(openwrkBuildPath, openwrkPath);
+    copyFileSync(orchestratorBuildPath, orchestratorPath);
   }
 
-  if (openwrkTargetPath) {
-    const shouldCopyTarget = !existsSync(openwrkTargetPath) || isStubBinary(openwrkTargetPath);
-    if (shouldCopyTarget && openwrkBuildPath !== openwrkTargetPath) {
+  if (orchestratorTargetPath) {
+    const shouldCopyTarget =
+      didBuildOrchestrator ||
+      !existsSync(orchestratorTargetPath) ||
+      isStubBinary(orchestratorTargetPath);
+    if (shouldCopyTarget && orchestratorBuildPath !== orchestratorTargetPath) {
       try {
-        if (existsSync(openwrkTargetPath)) unlinkSync(openwrkTargetPath);
+        if (existsSync(orchestratorTargetPath)) unlinkSync(orchestratorTargetPath);
       } catch {
         // ignore
       }
-      copyFileSync(openwrkBuildPath, openwrkTargetPath);
+      copyFileSync(orchestratorBuildPath, orchestratorTargetPath);
+    }
+  }
+}
+
+// Build chrome-devtools-mcp shim sidecar
+let didBuildChromeDevtools = false;
+const shouldBuildChromeDevtools =
+  forceBuild || !existsSync(chromeDevtoolsBuildPath) || isStubBinary(chromeDevtoolsBuildPath);
+if (shouldBuildChromeDevtools) {
+  mkdirSync(sidecarDir, { recursive: true });
+  if (existsSync(chromeDevtoolsBuildPath)) {
+    try {
+      unlinkSync(chromeDevtoolsBuildPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!existsSync(chromeDevtoolsShimPath)) {
+    console.error(`Chrome DevTools MCP shim source not found at ${chromeDevtoolsShimPath}`);
+    process.exit(1);
+  }
+
+  const chromeDevtoolsArgs = [
+    "build",
+    "--compile",
+    chromeDevtoolsShimPath,
+    "--outfile",
+    chromeDevtoolsBuildPath,
+  ];
+  if (bunTarget) {
+    chromeDevtoolsArgs.push("--target", bunTarget);
+  }
+
+  const result = spawnSync("bun", chromeDevtoolsArgs, {
+    cwd: __dirname,
+    stdio: "inherit",
+    shell: true,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      BUN_ENV: "production",
+    },
+  });
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+
+  didBuildChromeDevtools = true;
+}
+
+if (existsSync(chromeDevtoolsBuildPath)) {
+  const shouldCopyCanonical =
+    didBuildChromeDevtools || !existsSync(chromeDevtoolsPath) || isStubBinary(chromeDevtoolsPath);
+  if (shouldCopyCanonical && chromeDevtoolsBuildPath !== chromeDevtoolsPath) {
+    try {
+      if (existsSync(chromeDevtoolsPath)) unlinkSync(chromeDevtoolsPath);
+    } catch {
+      // ignore
+    }
+    copyFileSync(chromeDevtoolsBuildPath, chromeDevtoolsPath);
+  }
+
+  if (chromeDevtoolsTargetPath) {
+    const shouldCopyTarget =
+      didBuildChromeDevtools ||
+      !existsSync(chromeDevtoolsTargetPath) ||
+      isStubBinary(chromeDevtoolsTargetPath);
+    if (shouldCopyTarget && chromeDevtoolsBuildPath !== chromeDevtoolsTargetPath) {
+      try {
+        if (existsSync(chromeDevtoolsTargetPath)) unlinkSync(chromeDevtoolsTargetPath);
+      } catch {
+        // ignore
+      }
+      copyFileSync(chromeDevtoolsBuildPath, chromeDevtoolsTargetPath);
     }
   }
 }
@@ -561,9 +750,9 @@ const openworkServerVersion = (() => {
   }
 })();
 
-const openwrkVersion = (() => {
+const orchestratorVersion = (() => {
   try {
-    const raw = readFileSync(resolve(openwrkDir, "package.json"), "utf8");
+    const raw = readFileSync(resolve(orchestratorDir, "package.json"), "utf8");
     return String(JSON.parse(raw).version ?? "").trim();
   } catch {
     return null;
@@ -579,13 +768,17 @@ const versions = {
     version: openworkServerVersion,
     sha256: existsSync(openworkServerPath) ? sha256File(openworkServerPath) : null,
   },
-  owpenbot: {
-    version: expectedOwpenbotVersion,
-    sha256: existsSync(owpenbotPath) ? sha256File(owpenbotPath) : null,
+  opencodeRouter: {
+    version: expectedOpenCodeRouterVersion,
+    sha256: existsSync(opencodeRouterPath) ? sha256File(opencodeRouterPath) : null,
   },
-  openwrk: {
-    version: openwrkVersion,
-    sha256: existsSync(openwrkPath) ? sha256File(openwrkPath) : null,
+  "openwork-orchestrator": {
+    version: orchestratorVersion,
+    sha256: existsSync(orchestratorPath) ? sha256File(orchestratorPath) : null,
+  },
+  "chrome-devtools-mcp": {
+    version: chromeDevtoolsMcpVersion,
+    sha256: existsSync(chromeDevtoolsPath) ? sha256File(chromeDevtoolsPath) : null,
   },
 };
 
@@ -603,6 +796,11 @@ try {
   mkdirSync(sidecarDir, { recursive: true });
   const content = JSON.stringify(versions, null, 2) + "\n";
   writeFileSync(versionsPath, content, "utf8");
+  if (resolvedTargetTriple) {
+    const targetSuffix = process.platform === "win32" ? ".exe" : "";
+    const targetVersionsPath = join(sidecarDir, `versions.json-${resolvedTargetTriple}${targetSuffix}`);
+    writeFileSync(targetVersionsPath, content, "utf8");
+  }
 } catch (error) {
   console.error(`Failed to write versions.json: ${error}`);
   process.exit(1);
