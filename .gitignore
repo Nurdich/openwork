@@ -41,3 +41,16 @@ vendor/opencode/
 .opencode/openwork/
 .vercel
 .env*.local
+
+
+# Compiled server binary (built artifact, not source)
+packages/server/cli
+packages/server/openwork-server
+
+# Orchestrator compiled binaries
+packages/orchestrator/bin/openwork-*
+
+# Large media / demo files
+*.mp4
+*.gif
+app-demo.*
