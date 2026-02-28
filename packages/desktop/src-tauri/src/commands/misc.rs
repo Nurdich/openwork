@@ -16,6 +16,14 @@ pub struct CacheResetResult {
     pub errors: Vec<String>,
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppBuildInfo {
+    pub version: String,
+    pub git_sha: Option<String>,
+    pub build_epoch: Option<String>,
+}
+
 fn opencode_cache_candidates() -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
@@ -162,6 +170,37 @@ fn validate_project_dir(app: &AppHandle, project_dir: &str) -> Result<PathBuf, S
     Ok(canonical)
 }
 
+fn resolve_opencode_program(
+    app: &AppHandle,
+    prefer_sidecar: bool,
+    opencode_bin_path: Option<String>,
+) -> Result<PathBuf, String> {
+    if let Some(custom) = opencode_bin_path {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
+    let resource_dir = app.path().resource_dir().ok();
+    let current_bin_dir = tauri::process::current_binary(&app.env())
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.to_path_buf()));
+
+    let (program, _in_path, notes) = resolve_engine_path(
+        prefer_sidecar,
+        resource_dir.as_deref(),
+        current_bin_dir.as_deref(),
+    );
+
+    program.ok_or_else(|| {
+        let notes_text = notes.join("\n");
+        format!(
+            "OpenCode CLI not found.\n\nInstall with:\n- brew install anomalyco/tap/opencode\n- curl -fsSL https://opencode.ai/install | bash\n\nNotes:\n{notes_text}"
+        )
+    })
+}
+
 #[tauri::command]
 pub fn reset_opencode_cache() -> Result<CacheResetResult, String> {
     let candidates = opencode_cache_candidates();
@@ -220,6 +259,106 @@ pub fn reset_openwork_state(app: tauri::AppHandle, mode: String) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+pub fn app_build_info(app: AppHandle) -> AppBuildInfo {
+    let version = app.package_info().version.to_string();
+    let git_sha = option_env!("OPENWORK_GIT_SHA").map(|value| value.to_string());
+    let build_epoch = option_env!("OPENWORK_BUILD_EPOCH").map(|value| value.to_string());
+    AppBuildInfo {
+        version,
+        git_sha,
+        build_epoch,
+    }
+}
+
+#[tauri::command]
+pub fn obsidian_is_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let mut candidates = vec![PathBuf::from("/Applications/Obsidian.app")];
+        if let Some(home) = home_dir() {
+            candidates.push(home.join("Applications").join("Obsidian.app"));
+        }
+        return candidates.into_iter().any(|path| path.exists());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+#[tauri::command]
+pub fn open_in_obsidian(file_path: String) -> Result<(), String> {
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("file_path is required".to_string());
+    }
+
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        return Err("file_path must be an absolute path".to_string());
+    }
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", path.display()));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if !obsidian_is_available() {
+            return Err("Obsidian is not installed.".to_string());
+        }
+
+        let status = std::process::Command::new("open")
+            .arg("-a")
+            .arg("Obsidian")
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("Failed to launch Obsidian: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("Failed to launch Obsidian (exit status: {status})."));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Open in Obsidian is currently supported on macOS only.".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn opencode_db_migrate(
+    app: AppHandle,
+    project_dir: String,
+    prefer_sidecar: Option<bool>,
+    opencode_bin_path: Option<String>,
+) -> Result<ExecResult, String> {
+    let project_dir = validate_project_dir(&app, &project_dir)?;
+    let program =
+        resolve_opencode_program(&app, prefer_sidecar.unwrap_or(false), opencode_bin_path)?;
+
+    let mut command = command_for_program(&program);
+    for (key, value) in crate::bun_env::bun_env_overrides() {
+        command.env(key, value);
+    }
+
+    let output = command
+        .arg("db")
+        .arg("migrate")
+        .current_dir(&project_dir)
+        .output()
+        .map_err(|e| format!("Failed to run opencode db migrate: {e}"))?;
+
+    let status = output.status.code().unwrap_or(-1);
+    Ok(ExecResult {
+        ok: output.status.success(),
+        status,
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
 /// Run `opencode mcp auth <server_name>` in the given project directory.
 /// This spawns the process detached so the OAuth flow can open a browser.
 #[tauri::command]
@@ -231,20 +370,14 @@ pub fn opencode_mcp_auth(
     let project_dir = validate_project_dir(&app, &project_dir)?;
     let server_name = validate_server_name(&server_name)?;
 
-    let resource_dir = app.path().resource_dir().ok();
-    let current_bin_dir = tauri::process::current_binary(&app.env())
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.to_path_buf()));
-    let (program, _in_path, notes) =
-        resolve_engine_path(true, resource_dir.as_deref(), current_bin_dir.as_deref());
-    let Some(program) = program else {
-        let notes_text = notes.join("\n");
-        return Err(format!(
-      "OpenCode CLI not found.\n\nInstall with:\n- brew install anomalyco/tap/opencode\n- curl -fsSL https://opencode.ai/install | bash\n\nNotes:\n{notes_text}"
-    ));
-    };
+    let program = resolve_opencode_program(&app, true, None)?;
 
-    let output = command_for_program(&program)
+    let mut command = command_for_program(&program);
+    for (key, value) in crate::bun_env::bun_env_overrides() {
+        command.env(key, value);
+    }
+
+    let output = command
         .arg("mcp")
         .arg("auth")
         .arg(server_name)

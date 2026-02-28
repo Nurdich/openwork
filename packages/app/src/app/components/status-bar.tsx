@@ -2,10 +2,9 @@ import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from
 import { Cpu, MessageCircle, Server, Settings } from "lucide-solid";
 
 import type { OpenworkServerStatus } from "../lib/openwork-server";
-import type { OwpenbotStatus } from "../lib/tauri";
+import type { OpenCodeRouterStatus } from "../lib/tauri";
 import type { McpStatusMap } from "../types";
-import { getOwpenbotStatus } from "../lib/tauri";
-import { currentLocale, t } from "../../i18n";
+import { getOpenCodeRouterStatus } from "../lib/tauri";
 
 import Button from "./button";
 
@@ -22,49 +21,41 @@ type StatusBarProps = {
 };
 
 export default function StatusBar(props: StatusBarProps) {
-  const translate = (key: string) => t(key, currentLocale());
-  const [owpenbotStatus, setOwpenbotStatus] = createSignal<OwpenbotStatus | null>(null);
+  const [opencodeRouterStatus, setOpenCodeRouterStatus] = createSignal<OpenCodeRouterStatus | null>(null);
   const [documentVisible, setDocumentVisible] = createSignal(true);
 
   const opencodeStatusMeta = createMemo(() => ({
     dot: props.clientConnected ? "bg-green-9" : "bg-gray-6",
     text: props.clientConnected ? "text-green-11" : "text-gray-10",
-    label: props.clientConnected ? translate("status.connected") : translate("status.not_connected"),
+    label: props.clientConnected ? "Connected" : "Not connected",
   }));
 
   const openworkStatusMeta = createMemo(() => {
     switch (props.openworkServerStatus) {
       case "connected":
-        return { dot: "bg-green-9", text: "text-green-11", label: translate("status.ready") };
+        return { dot: "bg-green-9", text: "text-green-11", label: "Ready" };
       case "limited":
-        return {
-          dot: "bg-amber-9",
-          text: "text-amber-11",
-          label: translate("status.limited_access"),
-        };
+        return { dot: "bg-amber-9", text: "text-amber-11", label: "Limited access" };
       default:
-        return { dot: "bg-gray-6", text: "text-gray-10", label: translate("status.unavailable") };
+        return { dot: "bg-gray-6", text: "text-gray-10", label: "Unavailable" };
     }
   });
 
   const messagingMeta = createMemo(() => {
-    const status = owpenbotStatus();
+    const status = opencodeRouterStatus();
     if (!status) {
-      return {
-        dot: "bg-gray-6",
-        text: "text-gray-10",
-        label: translate("status.messaging_unavailable"),
-      };
+      return { dot: "bg-gray-6", text: "text-gray-10", label: "Messaging bridge unavailable" };
     }
-    const whatsappLinked = status.whatsapp.linked;
-    const telegramConfigured = status.telegram.configured;
-    if (whatsappLinked && telegramConfigured) {
-      return { dot: "bg-green-9", text: "text-green-11", label: translate("status.messaging_ready") };
+    const telegramConfigured = (status.telegram.items?.length ?? 0) > 0;
+    const slackConfigured = (status.slack.items?.length ?? 0) > 0;
+    const configuredCount = [telegramConfigured, slackConfigured].filter(Boolean).length;
+    if (status.running && configuredCount > 0) {
+      return { dot: "bg-green-9", text: "text-green-11", label: "Messaging bridge ready" };
     }
-    if (whatsappLinked || telegramConfigured || status.running) {
-      return { dot: "bg-amber-9", text: "text-amber-11", label: translate("status.messaging_setup") };
+    if (configuredCount > 0 || status.running) {
+      return { dot: "bg-amber-9", text: "text-amber-11", label: "Messaging bridge setup" };
     }
-    return { dot: "bg-gray-6", text: "text-gray-10", label: translate("status.messaging_offline") };
+    return { dot: "bg-gray-6", text: "text-gray-10", label: "Messaging bridge offline" };
   });
 
   type ProTip = {
@@ -87,32 +78,32 @@ export default function StatusBar(props: StatusBarProps) {
 
   const proTips = createMemo<ProTip[]>(() => [
     {
-      id: "telegram",
-      label: translate("tip.connect_telegram"),
+      id: "slack",
+      label: "Connect Slack",
       enabled: () => {
-        const status = owpenbotStatus();
-        return Boolean(status && !status.telegram.configured);
+        const status = opencodeRouterStatus();
+        return Boolean(status && (status.slack.items?.length ?? 0) === 0);
       },
       action: () => runAction(props.onOpenMessaging),
     },
     {
-      id: "whatsapp",
-      label: translate("tip.connect_whatsapp"),
+      id: "telegram",
+      label: "Connect Telegram",
       enabled: () => {
-        const status = owpenbotStatus();
-        return Boolean(status && !status.whatsapp.linked);
+        const status = opencodeRouterStatus();
+        return Boolean(status && (status.telegram.items?.length ?? 0) === 0);
       },
       action: () => runAction(props.onOpenMessaging),
     },
     {
       id: "notion",
-      label: translate("tip.connect_notion"),
+      label: "Connect Notion MCP",
       enabled: () => notionStatus() !== "connected",
       action: () => runAction(props.onOpenMcp),
     },
     {
       id: "providers",
-      label: translate("tip.use_own_models"),
+      label: "Use your own models (OpenRouter, Anthropic, OpenAI)",
       enabled: () => props.clientConnected && providerConnectedCount() === 0,
       action: () => runAction(props.onOpenProviders),
     },
@@ -168,9 +159,9 @@ export default function StatusBar(props: StatusBarProps) {
     setTipCursor(1);
   });
 
-  const refreshOwpenbot = async () => {
-    const next = await getOwpenbotStatus();
-    setOwpenbotStatus(next);
+  const refreshOpenCodeRouter = async () => {
+    const next = await getOpenCodeRouterStatus();
+    setOpenCodeRouterStatus(next);
   };
 
   createEffect(() => {
@@ -183,8 +174,8 @@ export default function StatusBar(props: StatusBarProps) {
 
   createEffect(() => {
     if (!documentVisible()) return;
-    refreshOwpenbot();
-    const interval = window.setInterval(refreshOwpenbot, 15_000);
+    refreshOpenCodeRouter();
+    const interval = window.setInterval(refreshOpenCodeRouter, 15_000);
     onCleanup(() => window.clearInterval(interval));
   });
 
@@ -198,14 +189,14 @@ export default function StatusBar(props: StatusBarProps) {
 
   return (
     <div class="border-t border-gray-6 bg-gray-1/90 backdrop-blur-md">
-      <div class="mx-auto max-w-5xl px-4 py-2 flex flex-wrap items-center gap-3 text-xs">
+      <div class="px-4 py-2 flex flex-wrap items-center gap-3 text-xs">
         <div
           class="flex items-center gap-2"
-          title={`${translate("status.opencode_engine")}: ${opencodeStatusMeta().label}`}
+          title={`OpenCode Engine: ${opencodeStatusMeta().label}`}
         >
           <span class={`w-2 h-2 rounded-full ${opencodeStatusMeta().dot}`} />
           <Cpu class="w-4 h-4 text-gray-11" />
-          <Show when={props.developerMode}>
+          <Show when={props.developerMode || !props.clientConnected}>
             <span class="text-gray-11 font-medium">OpenCode</span>
             <span class={opencodeStatusMeta().text}>{opencodeStatusMeta().label}</span>
           </Show>
@@ -213,30 +204,16 @@ export default function StatusBar(props: StatusBarProps) {
         <div class="w-px h-4 bg-gray-6/70" />
         <div
           class="flex items-center gap-2"
-          title={`${translate("status.openwork_server")}: ${openworkStatusMeta().label}`}
+          title={`OpenWork Server: ${openworkStatusMeta().label}`}
         >
           <span class={`w-2 h-2 rounded-full ${openworkStatusMeta().dot}`} />
           <Server class="w-4 h-4 text-gray-11" />
-          <Show when={props.developerMode}>
+          <Show when={props.developerMode || props.openworkServerStatus !== "connected"}>
             <span class="text-gray-11 font-medium">OpenWork</span>
             <span class={openworkStatusMeta().text}>{openworkStatusMeta().label}</span>
           </Show>
         </div>
         <div class="ml-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            class="h-7 px-2.5 py-0 text-xs"
-            onClick={props.onOpenMessaging}
-            title={messagingMeta().label}
-          >
-            <span class="relative">
-              <MessageCircle class={`w-4 h-4 ${messagingMeta().text}`} />
-              <span class={`absolute -right-1 -bottom-1 w-2 h-2 rounded-full ${messagingMeta().dot}`} />
-            </span>
-            <Show when={props.developerMode}>
-              <span class="text-gray-11 font-medium">{translate("status.messaging_label")}</span>
-            </Show>
-          </Button>
           <Show when={tipVisible() && activeTip()}>
             <button
               type="button"
@@ -245,9 +222,7 @@ export default function StatusBar(props: StatusBarProps) {
               title={activeTip()?.label}
               aria-label={activeTip()?.label}
             >
-              <span class="uppercase tracking-[0.2em] text-[10px] text-gray-8">
-                {translate("status.tip_label")}
-              </span>
+              <span class="uppercase tracking-[0.2em] text-[10px] text-gray-8">Tip</span>
               <span class="text-gray-11 font-medium">{activeTip()?.label}</span>
             </button>
           </Show>
@@ -255,11 +230,11 @@ export default function StatusBar(props: StatusBarProps) {
             variant="ghost"
             class="h-7 px-2.5 py-0 text-xs"
             onClick={props.onOpenSettings}
-            title={translate("common.settings")}
+            title="Settings"
           >
             <Settings class="w-4 h-4" />
             <Show when={props.developerMode}>
-              <span class="text-gray-11 font-medium">{translate("common.settings")}</span>
+              <span class="text-gray-11 font-medium">Settings</span>
             </Show>
           </Button>
         </div>

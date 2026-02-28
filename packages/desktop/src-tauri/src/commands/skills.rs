@@ -142,20 +142,92 @@ fn gather_skills(
         }
 
         let path = entry.path();
-        if !path.join("SKILL.md").is_file() {
-            continue;
-        }
-
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-
-        if seen.insert(name.to_string()) {
-            out.push(path);
+        if path.join("SKILL.md").is_file() {
+            // Direct skill: <root>/<name>/SKILL.md
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if seen.insert(name.to_string()) {
+                out.push(path);
+            }
+        } else {
+            // Domain/category folder: <root>/<domain>/<name>/SKILL.md – scan one level deeper.
+            // This supports the convention where global skills are organised as
+            //   skills/<domain>/<skill-name>/SKILL.md
+            // in addition to the flat   skills/<skill-name>/SKILL.md  layout.
+            if let Ok(sub_entries) = fs::read_dir(&path) {
+                for sub_entry in sub_entries.flatten() {
+                    let Ok(sub_ft) = sub_entry.file_type() else {
+                        continue;
+                    };
+                    if !sub_ft.is_dir() {
+                        continue;
+                    }
+                    let sub_path = sub_entry.path();
+                    if !sub_path.join("SKILL.md").is_file() {
+                        continue;
+                    }
+                    let Some(name) = sub_path.file_name().and_then(|s| s.to_str()) else {
+                        continue;
+                    };
+                    if seen.insert(name.to_string()) {
+                        out.push(sub_path);
+                    }
+                }
+            }
         }
     }
 
     Ok(())
+}
+
+fn find_skill_file_in_root(root: &Path, name: &str) -> Option<PathBuf> {
+    let direct = root.join(name).join("SKILL.md");
+    if direct.is_file() {
+        return Some(direct);
+    }
+
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let candidate = entry.path().join(name).join("SKILL.md");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+fn collect_skill_dirs_by_name(root: &Path, name: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+
+    let direct = root.join(name);
+    if direct.join("SKILL.md").is_file() {
+        out.push(direct);
+    }
+
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let candidate = entry.path().join(name);
+            if candidate.join("SKILL.md").is_file() {
+                out.push(candidate);
+            }
+        }
+    }
+
+    out
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -165,6 +237,13 @@ pub struct LocalSkillCard {
     pub path: String,
     pub description: Option<String>,
     pub trigger: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalSkillContent {
+    pub path: String,
+    pub content: String,
 }
 
 fn extract_frontmatter_value(raw: &str, keys: &[&str]) -> Option<String> {
@@ -185,7 +264,10 @@ fn extract_frontmatter_value(raw: &str, keys: &[&str]) -> Option<String> {
         let Some((key, value)) = trimmed.split_once(':') else {
             continue;
         };
-        if !keys.iter().any(|candidate| candidate.eq_ignore_ascii_case(key.trim())) {
+        if !keys
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(key.trim()))
+        {
             continue;
         }
         let mut cleaned = value.trim().to_string();
@@ -321,6 +403,77 @@ pub fn list_local_skills(project_dir: String) -> Result<Vec<LocalSkillCard>, Str
 }
 
 #[tauri::command]
+pub fn read_local_skill(project_dir: String, name: String) -> Result<LocalSkillContent, String> {
+    let project_dir = project_dir.trim();
+    if project_dir.is_empty() {
+        return Err("projectDir is required".to_string());
+    }
+
+    let name = validate_skill_name(&name)?;
+    let roots = collect_skill_roots(project_dir)?;
+
+    for root in roots {
+        let Some(path) = find_skill_file_in_root(&root, &name) else {
+            continue;
+        };
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+        return Ok(LocalSkillContent {
+            path: path.to_string_lossy().to_string(),
+            content: raw,
+        });
+    }
+
+    Err("Skill not found".to_string())
+}
+
+#[tauri::command]
+pub fn write_local_skill(
+    project_dir: String,
+    name: String,
+    content: String,
+) -> Result<ExecResult, String> {
+    let project_dir = project_dir.trim();
+    if project_dir.is_empty() {
+        return Err("projectDir is required".to_string());
+    }
+
+    let name = validate_skill_name(&name)?;
+    let roots = collect_skill_roots(project_dir)?;
+    let mut target: Option<PathBuf> = None;
+
+    for root in roots {
+        if let Some(path) = find_skill_file_in_root(&root, &name) {
+            target = Some(path);
+            break;
+        }
+    }
+
+    let Some(path) = target else {
+        return Ok(ExecResult {
+            ok: false,
+            status: 1,
+            stdout: String::new(),
+            stderr: "Skill not found".to_string(),
+        });
+    };
+
+    let next = if content.ends_with('\n') {
+        content
+    } else {
+        format!("{}\n", content)
+    };
+    fs::write(&path, next).map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+
+    Ok(ExecResult {
+        ok: true,
+        status: 0,
+        stdout: format!("Saved skill {}", name),
+        stderr: String::new(),
+    })
+}
+
+#[tauri::command]
 pub fn install_skill_template(
     project_dir: String,
     name: String,
@@ -378,14 +531,11 @@ pub fn uninstall_skill(project_dir: String, name: String) -> Result<ExecResult, 
     let mut removed = false;
 
     for root in skill_roots {
-        let dest = root.join(&name);
-        if !dest.exists() {
-            continue;
+        for dest in collect_skill_dirs_by_name(&root, &name) {
+            fs::remove_dir_all(&dest)
+                .map_err(|e| format!("Failed to remove {}: {e}", dest.display()))?;
+            removed = true;
         }
-
-        fs::remove_dir_all(&dest)
-            .map_err(|e| format!("Failed to remove {}: {e}", dest.display()))?;
-        removed = true;
     }
 
     if !removed {

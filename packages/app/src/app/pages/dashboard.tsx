@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import type {
   DashboardTab,
   McpServerEntry,
@@ -8,46 +8,66 @@ import type {
   ProviderListItem,
   SettingsTab,
   ScheduledJob,
+  HubSkillCard,
   SkillCard,
   StartupPreference,
-  WorkspaceCommand,
+  WorkspaceSessionGroup,
   View,
 } from "../types";
 import type { McpDirectoryInfo } from "../constants";
-import { formatRelativeTime } from "../utils";
+import {
+  formatRelativeTime,
+  getWorkspaceTaskLoadErrorDisplay,
+  isTauriRuntime,
+  isWindowsPlatform,
+  normalizeDirectoryPath,
+} from "../utils";
+import {
+  buildOpenworkConnectInviteUrl,
+  buildOpenworkWorkspaceBaseUrl,
+  createOpenworkServerClient,
+  parseOpenworkWorkspaceIdFromUrl,
+} from "../lib/openwork-server";
 import type {
   OpenworkAuditEntry,
+  OpenworkSoulHeartbeatEntry,
+  OpenworkSoulStatus,
+  OpenworkServerClient,
   OpenworkServerCapabilities,
   OpenworkServerDiagnostics,
+  OpenworkWorkspaceExport,
   OpenworkServerSettings,
   OpenworkServerStatus,
 } from "../lib/openwork-server";
-import type { EngineInfo, OpenwrkStatus, OpenworkServerInfo, OwpenbotInfo, WorkspaceInfo } from "../lib/tauri";
+import type { EngineInfo, OrchestratorStatus, OpenworkServerInfo, OpenCodeRouterInfo, WorkspaceInfo } from "../lib/tauri";
+import { DEFAULT_OPENWORK_PUBLISHER_BASE_URL, publishOpenworkBundleJson } from "../lib/publisher";
 
 import Button from "../components/button";
-import OpenWorkLogo from "../components/openwork-logo";
-import WorkspaceChip from "../components/workspace-chip";
-import McpView from "./mcp";
-import PluginsView from "./plugins";
+import ExtensionsView from "./extensions";
 import ScheduledTasksView from "./scheduled";
+import SoulView from "./soul";
+import ConfigView from "./config";
 import SettingsView from "./settings";
-import type { KeybindSetting } from "../components/settings-keybinds";
 import SkillsView from "./skills";
-import CommandsView from "./commands";
+import IdentitiesView from "./identities";
 import StatusBar from "../components/status-bar";
-import ProviderAuthModal from "../components/provider-auth-modal";
-import { currentLocale, t } from "../../i18n";
+import ProviderAuthModal, { type ProviderOAuthStartResult } from "../components/provider-auth-modal";
+import ShareWorkspaceModal from "../components/share-workspace-modal";
+import WorkspaceSessionList from "../components/session/workspace-session-list";
 import {
-  Command,
-  Copy,
-  Check,
-  Cpu,
-  Calendar,
-  Package,
-  Play,
+  Box,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  History,
+  HeartPulse,
+  Loader2,
+  MessageCircle,
+  MoreHorizontal,
   Plus,
-  Server,
-  Terminal,
+  Settings,
+  SlidersHorizontal,
+  Zap,
 } from "lucide-solid";
 
 export type DashboardViewProps = {
@@ -63,7 +83,8 @@ export type DashboardViewProps = {
   providerAuthMethods: Record<string, { type: "oauth" | "api"; label: string }[]>;
   openProviderAuthModal: () => Promise<void>;
   closeProviderAuthModal: () => void;
-  startProviderAuth: (providerId?: string) => Promise<string>;
+  startProviderAuth: (providerId?: string) => Promise<ProviderOAuthStartResult>;
+  completeProviderAuthOAuth: (providerId: string, methodIndex: number, code?: string) => Promise<string | void>;
   submitProviderApiKey: (providerId: string, apiKey: string) => Promise<string | void>;
   view: View;
   setView: (view: View, sessionId?: string) => void;
@@ -78,6 +99,9 @@ export type DashboardViewProps = {
   error: string | null;
   openworkServerStatus: OpenworkServerStatus;
   openworkServerUrl: string;
+  openworkServerClient: OpenworkServerClient | null;
+  openworkReconnectBusy: boolean;
+  reconnectOpenworkServer: () => Promise<boolean>;
   openworkServerSettings: OpenworkServerSettings;
   openworkServerHostInfo: OpenworkServerInfo | null;
   openworkServerCapabilities: OpenworkServerCapabilities | null;
@@ -89,8 +113,8 @@ export type DashboardViewProps = {
   opencodeConnectStatus: OpencodeConnectStatus | null;
   engineInfo: EngineInfo | null;
   engineDoctorVersion: string | null;
-  openwrkStatus: OpenwrkStatus | null;
-  owpenbotInfo: OwpenbotInfo | null;
+  orchestratorStatus: OrchestratorStatus | null;
+  opencodeRouterInfo: OpenCodeRouterInfo | null;
   updateOpenworkServerSettings: (next: OpenworkServerSettings) => void;
   resetOpenworkServerSettings: () => void;
   testOpenworkServerConnection: (next: OpenworkServerSettings) => Promise<boolean>;
@@ -98,71 +122,66 @@ export type DashboardViewProps = {
   reloadWorkspaceEngine: () => Promise<void>;
   reloadBusy: boolean;
   reloadError: string | null;
-  keybindItems: KeybindSetting[];
-  onOverrideKeybind: (id: string, keybind: string | null) => void;
-  onResetKeybind: (id: string) => void;
-  onResetAllKeybinds: () => void;
+  workspaceAutoReloadAvailable: boolean;
+  workspaceAutoReloadEnabled: boolean;
+  setWorkspaceAutoReloadEnabled: (value: boolean) => void | Promise<void>;
+  workspaceAutoReloadResumeEnabled: boolean;
+  setWorkspaceAutoReloadResumeEnabled: (value: boolean) => void | Promise<void>;
   activeWorkspaceDisplay: WorkspaceInfo;
-  workspaceSearch: string;
-  setWorkspaceSearch: (value: string) => void;
-  workspacePickerOpen: boolean;
-  setWorkspacePickerOpen: (open: boolean) => void;
-  connectingWorkspaceId: string | null;
   workspaces: WorkspaceInfo[];
-  filteredWorkspaces: WorkspaceInfo[];
   activeWorkspaceId: string;
-  activateWorkspace: (id: string) => Promise<boolean> | boolean;
-  exportWorkspaceConfig: () => void;
+  connectingWorkspaceId: string | null;
+  activateWorkspace: (workspaceId: string) => Promise<boolean> | boolean | void;
+  testWorkspaceConnection: (workspaceId: string) => Promise<boolean> | boolean;
+  recoverWorkspace: (workspaceId: string) => Promise<boolean> | boolean;
+  openCreateWorkspace: () => void;
+  openCreateRemoteWorkspace: () => void;
+  importWorkspaceConfig: () => void;
+  importingWorkspaceConfig: boolean;
+  exportWorkspaceConfig: (workspaceId?: string) => void;
   exportWorkspaceBusy: boolean;
-  createWorkspaceOpen: boolean;
-  setCreateWorkspaceOpen: (open: boolean) => void;
-  createWorkspaceFlow: (
-    preset: "starter" | "automation" | "minimal",
-    folder: string | null
-  ) => void;
-  pickWorkspaceFolder: () => Promise<string | null>;
-  sessions: Array<{
-    id: string;
-    slug?: string | null;
-    title: string;
-    time: { updated: number };
-    directory?: string | null;
-  }>;
-  sessionStatusById: Record<string, string>;
+  workspaceSessionGroups: WorkspaceSessionGroup[];
+  selectedSessionId: string | null;
+  openRenameWorkspace: (workspaceId: string) => void;
+  editWorkspaceConnection: (workspaceId: string) => void;
+  forgetWorkspace: (workspaceId: string) => void;
+  stopSandbox: (workspaceId: string) => void;
   scheduledJobs: ScheduledJob[];
   scheduledJobsSource: "local" | "remote";
   scheduledJobsSourceReady: boolean;
+  schedulerPluginInstalled: boolean;
   scheduledJobsStatus: string | null;
   scheduledJobsBusy: boolean;
   scheduledJobsUpdatedAt: number | null;
   refreshScheduledJobs: (options?: { force?: boolean }) => void;
   deleteScheduledJob: (name: string) => Promise<void> | void;
+  soulStatusByWorkspaceId: Record<string, OpenworkSoulStatus | null>;
+  activeSoulStatus: OpenworkSoulStatus | null;
+  activeSoulHeartbeats: OpenworkSoulHeartbeatEntry[];
+  soulStatusBusy: boolean;
+  soulHeartbeatsBusy: boolean;
+  soulError: string | null;
+  refreshSoulData: (options?: { force?: boolean }) => void;
+  runSoulPrompt: (prompt: string) => void;
   activeWorkspaceRoot: string;
-  workspaceCommands: WorkspaceCommand[];
-  globalCommands: WorkspaceCommand[];
-  otherCommands: WorkspaceCommand[];
-  setCommandDraftName: (value: string) => void;
-  setCommandDraftDescription: (value: string) => void;
-  setCommandDraftTemplate: (value: string) => void;
-  setCommandDraftScope: (value: "workspace" | "global") => void;
-  openCommandModal: () => void;
-  resetCommandDraft?: (scope?: "workspace" | "global") => void;
-  runCommand: (command: WorkspaceCommand) => void;
-  deleteCommand: (command: WorkspaceCommand) => void;
-  justSavedCommand?: { name: string; scope: string } | null;
-  clearJustSavedCommand?: () => void;
   refreshSkills: (options?: { force?: boolean }) => void;
+  refreshHubSkills: (options?: { force?: boolean }) => void;
   refreshPlugins: (scopeOverride?: PluginScope) => void;
   refreshMcpServers: () => void;
   skills: SkillCard[];
   skillsStatus: string | null;
+  hubSkills: HubSkillCard[];
+  hubSkillsStatus: string | null;
   skillsAccessHint?: string | null;
   canInstallSkillCreator: boolean;
   canUseDesktopTools: boolean;
   importLocalSkill: () => void;
-  installSkillCreator: () => void;
+  installSkillCreator: () => Promise<{ ok: boolean; message: string }>;
+  installHubSkill: (name: string) => Promise<{ ok: boolean; message: string }>;
   revealSkillsFolder: () => void;
   uninstallSkill: (name: string) => void;
+  readSkill: (name: string) => Promise<{ name: string; path: string; content: string } | null>;
+  saveSkill: (input: { name: string; content: string; description?: string }) => void;
   pluginsAccessHint?: string | null;
   canEditPlugins: boolean;
   canUseGlobalPluginScope: boolean;
@@ -193,6 +212,7 @@ export type DashboardViewProps = {
     }>;
   }>;
   addPlugin: (pluginNameOverride?: string) => void;
+  removePlugin: (pluginName: string) => void;
   mcpServers: McpServerEntry[];
   mcpStatus: string | null;
   mcpLastUpdatedAt: number | null;
@@ -202,6 +222,8 @@ export type DashboardViewProps = {
   setSelectedMcp: (value: string | null) => void;
   quickConnect: McpDirectoryInfo[];
   connectMcp: (entry: McpDirectoryInfo) => void;
+  logoutMcpAuth: (name: string) => Promise<void> | void;
+  removeMcp: (name: string) => void;
   showMcpReloadBanner: boolean;
   mcpReloadBlocked: boolean;
   reloadMcpEngine: () => void;
@@ -213,10 +235,14 @@ export type DashboardViewProps = {
   openDefaultModelPicker: () => void;
   showThinking: boolean;
   toggleShowThinking: () => void;
+  hideTitlebar: boolean;
+  toggleHideTitlebar: () => void;
   modelVariantLabel: string;
   editModelVariant: () => void;
   updateAutoCheck: boolean;
   toggleUpdateAutoCheck: () => void;
+  updateAutoDownload: boolean;
+  toggleUpdateAutoDownload: () => void;
   themeMode: "light" | "dark" | "system";
   setThemeMode: (value: "light" | "dark" | "system") => void;
   updateStatus: {
@@ -235,23 +261,36 @@ export type DashboardViewProps = {
   downloadUpdate: () => void;
   installUpdateAndRestart: () => void;
   anyActiveRuns: boolean;
-  engineSource: "path" | "sidecar";
-  setEngineSource: (value: "path" | "sidecar") => void;
-  engineRuntime: "direct" | "openwrk";
-  setEngineRuntime: (value: "direct" | "openwrk") => void;
+  engineSource: "path" | "sidecar" | "custom";
+  setEngineSource: (value: "path" | "sidecar" | "custom") => void;
+  engineCustomBinPath: string;
+  setEngineCustomBinPath: (value: string) => void;
+  engineRuntime: "direct" | "openwork-orchestrator";
+  setEngineRuntime: (value: "direct" | "openwork-orchestrator") => void;
   isWindows: boolean;
   toggleDeveloperMode: () => void;
   developerMode: boolean;
   stopHost: () => void;
+  restartLocalServer: () => Promise<boolean>;
   openResetModal: (mode: "onboarding" | "all") => void;
   resetModalBusy: boolean;
   onResetStartupPreference: () => void;
   pendingPermissions: unknown;
   events: unknown;
+  workspaceDebugEvents: unknown;
+  clearWorkspaceDebugEvents: () => void;
   safeStringify: (value: unknown) => string;
+  repairOpencodeMigration: () => void;
+  migrationRepairBusy: boolean;
+  migrationRepairResult: { ok: boolean; message: string } | null;
+  migrationRepairAvailable: boolean;
+  migrationRepairUnavailableReason: string | null;
   repairOpencodeCache: () => void;
   cacheRepairBusy: boolean;
   cacheRepairResult: string | null;
+  cleanupOpenworkDockerContainers: () => void;
+  dockerCleanupBusy: boolean;
+  dockerCleanupResult: string | null;
   notionStatus: "disconnected" | "connecting" | "connected" | "error";
   notionStatusDetail: string | null;
   notionError: string | null;
@@ -259,73 +298,121 @@ export type DashboardViewProps = {
   connectNotion: () => void;
 };
 
-export default function DashboardView(props: DashboardViewProps) {
-  const translate = (key: string) => t(key, currentLocale());
-  const sessionStatusLabel = (status?: string | null) => {
-    if (!status || status === "idle") return translate("dashboard.idle");
-    if (status === "running") return translate("dashboard.running");
-    if (status === "completed") return translate("dashboard.completed");
-    if (status === "failed") return translate("dashboard.failed");
-    return status;
+type SharedSkillItem = {
+  name: string;
+  description?: string;
+  content: string;
+  trigger?: string;
+};
+
+type WorkspaceProfileBundleV1 = {
+  schemaVersion: 1;
+  type: "workspace-profile";
+  name: string;
+  description: string;
+  workspace: OpenworkWorkspaceExport;
+};
+
+type SkillsSetBundleV1 = {
+  schemaVersion: 1;
+  type: "skills-set";
+  name: string;
+  description: string;
+  skills: SharedSkillItem[];
+  sourceWorkspace?: {
+    id?: string;
+    name?: string;
   };
+};
+
+export default function DashboardView(props: DashboardViewProps) {
   const title = createMemo(() => {
     switch (props.tab) {
-      case "sessions":
-        return translate("title.sessions");
       case "scheduled":
-        return translate("title.scheduled_tasks");
-      case "commands":
-        return translate("title.commands");
+        return "Automations";
+      case "soul":
+        return "Soul";
       case "skills":
-        return translate("title.skills");
+        return "Skills";
       case "plugins":
-        return translate("title.plugins");
+        return "Extensions";
       case "mcp":
-        return translate("title.mcp");
+        return "Extensions";
+      case "identities":
+        return "Messaging";
+      case "config":
+        return "Advanced";
       case "settings":
-        return translate("title.settings");
+        return "Settings";
       default:
-        return translate("title.dashboard");
+        return "Automations";
     }
   });
 
-  const quickCommands = createMemo(() => props.workspaceCommands.slice(0, 3));
-  const canExportWorkspace = createMemo(() => props.activeWorkspaceDisplay.workspaceType !== "remote");
+  const workspaceLabel = (workspace: WorkspaceInfo) =>
+    workspace.displayName?.trim() ||
+    workspace.openworkWorkspaceName?.trim() ||
+    workspace.name?.trim() ||
+    workspace.path?.trim() ||
+    "Worker";
+  const workspaceKindLabel = (workspace: WorkspaceInfo) =>
+    workspace.workspaceType === "remote"
+      ? workspace.sandboxBackend === "docker" ||
+        Boolean(workspace.sandboxRunId?.trim()) ||
+        Boolean(workspace.sandboxContainerName?.trim())
+        ? "Sandbox"
+        : "Remote"
+      : "Local";
 
-  const openSessionFromList = (sessionId: string) => {
-    // Defer view switch to avoid click-through on the same event frame.
-    window.setTimeout(() => {
-      void props.selectSession(sessionId);
-      props.setTab("sessions");
+  const openSessionFromList = (workspaceId: string, sessionId: string) => {
+    // Route-driven selection: navigate first and let the route effect own selectSession.
+    if (workspaceId === props.activeWorkspaceId) {
       props.setView("session", sessionId);
-    }, 0);
+      return;
+    }
+    // For different workspace, activate workspace first
+    void (async () => {
+      await Promise.resolve(props.activateWorkspace(workspaceId));
+      props.setView("session", sessionId);
+    })();
+  };
+
+  const createTaskInWorkspace = (workspaceId: string) => {
+    const id = workspaceId.trim();
+    if (!id) return;
+    if (id === props.activeWorkspaceId) {
+      props.createSessionAndOpen();
+      return;
+    }
+    void (async () => {
+      await Promise.resolve(props.activateWorkspace(id));
+      props.createSessionAndOpen();
+    })();
   };
 
   // Track last refreshed tab to avoid duplicate calls
   const [lastRefreshedTab, setLastRefreshedTab] = createSignal<string | null>(null);
   const [refreshInProgress, setRefreshInProgress] = createSignal(false);
-  const [taskDraft, setTaskDraft] = createSignal("");
   const [providerAuthActionBusy, setProviderAuthActionBusy] = createSignal(false);
-  const [copiedWorkspaceId, setCopiedWorkspaceId] = createSignal<string | null>(null);
-  let copyTimeout: number | undefined;
+  const [shareWorkspaceId, setShareWorkspaceId] = createSignal<string | null>(null);
 
-  const canCreateTask = createMemo(
-    () => !props.newTaskDisabled && taskDraft().trim().length > 0
-  );
-
-  const startTask = () => {
-    const value = taskDraft().trim();
-    if (!value || props.newTaskDisabled) return;
-    props.setPrompt(value);
-    props.createSessionAndOpen();
-    setTaskDraft("");
+  const handleProviderAuthSelect = async (providerId: string): Promise<ProviderOAuthStartResult> => {
+    if (providerAuthActionBusy()) {
+      throw new Error("Provider auth is already in progress.");
+    }
+    setProviderAuthActionBusy(true);
+    try {
+      return await props.startProviderAuth(providerId);
+    } finally {
+      setProviderAuthActionBusy(false);
+    }
   };
 
-  const handleProviderAuthSelect = async (providerId: string) => {
+  const handleProviderAuthOAuth = async (providerId: string, methodIndex: number, code?: string) => {
     if (providerAuthActionBusy()) return;
     setProviderAuthActionBusy(true);
     try {
-      await props.startProviderAuth(providerId);
+      await props.completeProviderAuthOAuth(providerId, methodIndex, code);
       props.closeProviderAuthModal();
     } catch {
       // Errors are surfaced in the modal.
@@ -348,33 +435,8 @@ export default function DashboardView(props: DashboardViewProps) {
   };
 
   onCleanup(() => {
-    if (copyTimeout !== undefined) {
-      window.clearTimeout(copyTimeout);
-    }
+    // no-op
   });
-
-  const workspacePathLabel = (workspace: WorkspaceInfo) =>
-    workspace.workspaceType === "remote"
-      ? workspace.baseUrl ?? workspace.path
-      : workspace.path;
-
-  const handleCopyWorkspace = async (workspace: WorkspaceInfo) => {
-    const value = workspacePathLabel(workspace)?.trim();
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedWorkspaceId(workspace.id);
-      if (copyTimeout !== undefined) {
-        window.clearTimeout(copyTimeout);
-      }
-      copyTimeout = window.setTimeout(() => {
-        setCopiedWorkspaceId(null);
-        copyTimeout = undefined;
-      }, 2000);
-    } catch {
-      // ignore
-    }
-  };
 
   createEffect(() => {
     const currentTab = props.tab;
@@ -396,21 +458,14 @@ export default function DashboardView(props: DashboardViewProps) {
         if (currentTab === "skills" && !cancelled) {
           await props.refreshSkills();
         }
-        if (currentTab === "plugins" && !cancelled) {
-          await props.refreshPlugins();
-        }
-        if (currentTab === "mcp" && !cancelled) {
-          await props.refreshMcpServers();
+        if ((currentTab === "plugins" || currentTab === "mcp") && !cancelled) {
+          await Promise.all([props.refreshPlugins(), props.refreshMcpServers()]);
         }
         if (currentTab === "scheduled" && !cancelled) {
           await props.refreshScheduledJobs();
         }
-        if (currentTab === "sessions" && !cancelled) {
-          // Stagger these calls to avoid request stacking
-          await props.refreshSkills();
-          if (!cancelled) {
-            await props.refreshPlugins("project");
-          }
+        if (currentTab === "soul" && !cancelled) {
+          await props.refreshSoulData();
         }
       } catch {
         // Ignore errors during navigation
@@ -429,14 +484,22 @@ export default function DashboardView(props: DashboardViewProps) {
     });
   });
 
-  const navItem = (t: DashboardTab, label: any, icon: any) => {
-    const active = () => props.tab === t;
+  const soulModeEnabled = createMemo(() => {
+    const status = props.soulStatusByWorkspaceId[props.activeWorkspaceId];
+    return Boolean(status?.enabled ?? props.activeSoulStatus?.enabled);
+  });
+
+  const soulNavIconClass = () => (soulModeEnabled() ? "soul-nav-icon-active" : "");
+
+  const navItem = (t: DashboardTab, label: string, icon: any) => {
+    const active = () => props.tab === t || (t === "mcp" && props.tab === "plugins");
     return (
       <button
-        class={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+        type="button"
+        class={`w-full h-10 flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-colors ${
           active()
-            ? "bg-gray-2 text-gray-12"
-            : "text-gray-10 hover:text-gray-12 hover:bg-gray-2/50"
+            ? "bg-dls-active text-dls-text"
+            : "text-dls-secondary hover:text-dls-text hover:bg-dls-hover"
         }`}
         onClick={() => props.setTab(t)}
       >
@@ -451,439 +514,630 @@ export default function DashboardView(props: DashboardViewProps) {
     props.setTab("settings");
   };
 
+  const openConfig = () => {
+    props.setTab(props.developerMode ? "config" : "identities");
+  };
+
+  const openSoulForWorkspace = (workspaceId?: string) => {
+    const id = (workspaceId ?? props.activeWorkspaceId).trim();
+    if (!id) return;
+    void (async () => {
+      if (id !== props.activeWorkspaceId) {
+        await Promise.resolve(props.activateWorkspace(id));
+      }
+      props.setTab("soul");
+    })();
+  };
+
+  const revealWorkspaceInFinder = async (workspaceId: string) => {
+    const workspace = props.workspaces.find((entry) => entry.id === workspaceId) ?? null;
+    if (!workspace || workspace.workspaceType !== "local") return;
+    const target = workspace.path?.trim() ?? "";
+    if (!target || !isTauriRuntime()) return;
+    try {
+      const { openPath, revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      if (isWindowsPlatform()) {
+        await openPath(target);
+      } else {
+        await revealItemInDir(target);
+      }
+    } catch (error) {
+      console.warn("Failed to reveal workspace", error);
+    }
+  };
+
+  createEffect(() => {
+    if (props.developerMode) return;
+    if (props.tab !== "config") return;
+    props.setTab("identities");
+  });
+
+  const shareWorkspace = createMemo(() => {
+    const id = shareWorkspaceId();
+    if (!id) return null;
+    return props.workspaces.find((ws) => ws.id === id) ?? null;
+  });
+
+  const shareWorkspaceName = createMemo(() => {
+    const ws = shareWorkspace();
+    return ws ? workspaceLabel(ws) : "";
+  });
+
+  const shareWorkspaceDetail = createMemo(() => {
+    const ws = shareWorkspace();
+    if (!ws) return "";
+    if (ws.workspaceType === "remote") {
+      if (ws.remoteType === "openwork") {
+        const hostUrl = ws.openworkHostUrl?.trim() || ws.baseUrl?.trim() || "";
+        const mounted = buildOpenworkWorkspaceBaseUrl(hostUrl, ws.openworkWorkspaceId);
+        return mounted || hostUrl;
+      }
+      return ws.baseUrl?.trim() || "";
+    }
+    return ws.path?.trim() || "";
+  });
+
+  const [shareLocalOpenworkWorkspaceId, setShareLocalOpenworkWorkspaceId] = createSignal<string | null>(null);
+  const [shareWorkspaceProfileBusy, setShareWorkspaceProfileBusy] = createSignal(false);
+  const [shareWorkspaceProfileUrl, setShareWorkspaceProfileUrl] = createSignal<string | null>(null);
+  const [shareWorkspaceProfileError, setShareWorkspaceProfileError] = createSignal<string | null>(null);
+  const [shareSkillsSetBusy, setShareSkillsSetBusy] = createSignal(false);
+  const [shareSkillsSetUrl, setShareSkillsSetUrl] = createSignal<string | null>(null);
+  const [shareSkillsSetError, setShareSkillsSetError] = createSignal<string | null>(null);
+
+  createEffect(
+    on(shareWorkspaceId, () => {
+      setShareWorkspaceProfileBusy(false);
+      setShareWorkspaceProfileUrl(null);
+      setShareWorkspaceProfileError(null);
+      setShareSkillsSetBusy(false);
+      setShareSkillsSetUrl(null);
+      setShareSkillsSetError(null);
+    }),
+  );
+
+  createEffect(() => {
+    const ws = shareWorkspace();
+    const baseUrl = props.openworkServerHostInfo?.baseUrl?.trim() ?? "";
+    const token = props.openworkServerHostInfo?.clientToken?.trim() ?? "";
+    const workspacePath = ws?.workspaceType === "local" ? ws.path?.trim() ?? "" : "";
+
+    if (!ws || ws.workspaceType !== "local" || !workspacePath || !baseUrl || !token) {
+      setShareLocalOpenworkWorkspaceId(null);
+      return;
+    }
+
+    let cancelled = false;
+    setShareLocalOpenworkWorkspaceId(null);
+
+    void (async () => {
+      try {
+        const client = createOpenworkServerClient({ baseUrl, token });
+        const response = await client.listWorkspaces();
+        if (cancelled) return;
+        const items = Array.isArray(response.items) ? response.items : [];
+        const targetPath = normalizeDirectoryPath(workspacePath);
+        const match = items.find((entry) => normalizeDirectoryPath(entry.path) === targetPath);
+        setShareLocalOpenworkWorkspaceId(match?.id ?? null);
+      } catch {
+        if (!cancelled) setShareLocalOpenworkWorkspaceId(null);
+      }
+    })();
+
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
+
+  const shareFields = createMemo(() => {
+    const ws = shareWorkspace();
+    if (!ws) {
+      return [] as Array<{
+        label: string;
+        value: string;
+        secret?: boolean;
+        placeholder?: string;
+        hint?: string;
+      }>;
+    }
+
+    if (ws.workspaceType !== "remote") {
+      const hostUrl =
+        props.openworkServerHostInfo?.connectUrl?.trim() ||
+        props.openworkServerHostInfo?.lanUrl?.trim() ||
+        props.openworkServerHostInfo?.mdnsUrl?.trim() ||
+        props.openworkServerHostInfo?.baseUrl?.trim() ||
+        "";
+      const mountedUrl = shareLocalOpenworkWorkspaceId()
+        ? buildOpenworkWorkspaceBaseUrl(hostUrl, shareLocalOpenworkWorkspaceId())
+        : null;
+      const url = mountedUrl || hostUrl;
+      const token = props.openworkServerHostInfo?.clientToken?.trim() || "";
+      const inviteUrl = buildOpenworkConnectInviteUrl({
+        workspaceUrl: url,
+        token,
+      });
+      return [
+        {
+          label: "OpenWork invite link",
+          value: inviteUrl,
+          secret: true,
+          placeholder: !isTauriRuntime() ? "Desktop app required" : "Starting server...",
+          hint: "One link that prefills worker URL and token.",
+        },
+        {
+          label: "OpenWork worker URL",
+          value: url,
+          placeholder: !isTauriRuntime() ? "Desktop app required" : "Starting server...",
+          hint: mountedUrl
+            ? "Use on phones or laptops connecting to this worker."
+            : hostUrl
+              ? "Worker URL is resolving; host URL shown as fallback."
+              : undefined,
+        },
+        {
+          label: "Access token",
+          value: token,
+          secret: true,
+          placeholder: isTauriRuntime() ? "-" : "Desktop app required",
+          hint: mountedUrl
+            ? "Use on phones or laptops connecting to this worker."
+            : "Use on phones or laptops connecting to this host.",
+        },
+      ];
+    }
+
+    if (ws.remoteType === "openwork") {
+      const hostUrl = ws.openworkHostUrl?.trim() || ws.baseUrl?.trim() || "";
+      const url = buildOpenworkWorkspaceBaseUrl(hostUrl, ws.openworkWorkspaceId) || hostUrl;
+      const token =
+        ws.openworkToken?.trim() ||
+        props.openworkServerSettings.token?.trim() ||
+        "";
+      const inviteUrl = buildOpenworkConnectInviteUrl({
+        workspaceUrl: url,
+        token,
+      });
+      return [
+        {
+          label: "OpenWork invite link",
+          value: inviteUrl,
+          secret: true,
+          hint: "One link that prefills worker URL and token.",
+        },
+        {
+          label: "OpenWork worker URL",
+          value: url,
+        },
+        {
+          label: "Access token",
+          value: token,
+          secret: true,
+          placeholder: token ? undefined : "Set token in Advanced",
+          hint: "This token grants access to the worker on that host.",
+        },
+      ];
+    }
+
+    const baseUrl = ws.baseUrl?.trim() || ws.path?.trim() || "";
+    const directory = ws.directory?.trim() || "";
+    return [
+      {
+        label: "OpenCode base URL",
+        value: baseUrl,
+      },
+      {
+        label: "Directory",
+        value: directory,
+        placeholder: "(auto)",
+      },
+    ];
+  });
+
+  const shareNote = createMemo(() => {
+    const ws = shareWorkspace();
+    if (!ws) return null;
+    if (ws.workspaceType === "local" && props.engineInfo?.runtime === "direct") {
+      return "Engine runtime is set to Direct. Switching local workers can restart the host and disconnect clients. The token may change after a restart.";
+    }
+    return null;
+  });
+
+  const shareServiceDisabledReason = createMemo(() => {
+    const ws = shareWorkspace();
+    if (!ws) return "Select a worker first.";
+    if (ws.workspaceType === "remote" && ws.remoteType !== "openwork") {
+      return "Share service links are available for OpenWork workers.";
+    }
+    if (ws.workspaceType !== "remote") {
+      const baseUrl = props.openworkServerHostInfo?.baseUrl?.trim() ?? "";
+      const token = props.openworkServerHostInfo?.clientToken?.trim() ?? "";
+      if (!baseUrl || !token) {
+        return "Local OpenWork host is not ready yet.";
+      }
+    } else {
+      const hostUrl = ws.openworkHostUrl?.trim() || ws.baseUrl?.trim() || "";
+      const token = ws.openworkToken?.trim() || props.openworkServerSettings.token?.trim() || "";
+      if (!hostUrl) return "Missing OpenWork host URL.";
+      if (!token) return "Missing OpenWork token.";
+    }
+    return null;
+  });
+
+  const resolveShareExportContext = async (): Promise<{
+    client: OpenworkServerClient;
+    workspaceId: string;
+    workspace: WorkspaceInfo;
+  }> => {
+    const ws = shareWorkspace();
+    if (!ws) {
+      throw new Error("Select a worker first.");
+    }
+
+    if (ws.workspaceType !== "remote") {
+      const baseUrl = props.openworkServerHostInfo?.baseUrl?.trim() ?? "";
+      const token = props.openworkServerHostInfo?.clientToken?.trim() ?? "";
+      if (!baseUrl || !token) {
+        throw new Error("Local OpenWork host is not ready yet.");
+      }
+      const client = createOpenworkServerClient({ baseUrl, token });
+
+      let workspaceId = shareLocalOpenworkWorkspaceId()?.trim() ?? "";
+      if (!workspaceId) {
+        const response = await client.listWorkspaces();
+        const items = Array.isArray(response.items) ? response.items : [];
+        const targetPath = normalizeDirectoryPath(ws.path?.trim() ?? "");
+        const match = items.find((entry) => normalizeDirectoryPath(entry.path) === targetPath);
+        workspaceId = (match?.id ?? "").trim();
+        setShareLocalOpenworkWorkspaceId(workspaceId || null);
+      }
+
+      if (!workspaceId) {
+        throw new Error("Could not resolve this worker on the local OpenWork host.");
+      }
+
+      return { client, workspaceId, workspace: ws };
+    }
+
+    if (ws.remoteType !== "openwork") {
+      throw new Error("Share service links are available for OpenWork workers.");
+    }
+
+    const hostUrl = ws.openworkHostUrl?.trim() || ws.baseUrl?.trim() || "";
+    const token = ws.openworkToken?.trim() || props.openworkServerSettings.token?.trim() || "";
+    if (!hostUrl || !token) {
+      throw new Error("OpenWork host URL and token are required.");
+    }
+
+    const client = createOpenworkServerClient({ baseUrl: hostUrl, token });
+    let workspaceId =
+      ws.openworkWorkspaceId?.trim() ||
+      parseOpenworkWorkspaceIdFromUrl(ws.openworkHostUrl ?? "") ||
+      parseOpenworkWorkspaceIdFromUrl(ws.baseUrl ?? "") ||
+      "";
+
+    if (!workspaceId) {
+      const response = await client.listWorkspaces();
+      const items = Array.isArray(response.items) ? response.items : [];
+      const directoryHint = normalizeDirectoryPath(ws.directory?.trim() ?? ws.path?.trim() ?? "");
+      const match = directoryHint
+        ? items.find((entry) => {
+            const entryPath = normalizeDirectoryPath(
+              (entry.opencode?.directory ?? entry.directory ?? entry.path ?? "").trim(),
+            );
+            return Boolean(entryPath && entryPath === directoryHint);
+          })
+        : (response.activeId ? items.find((entry) => entry.id === response.activeId) : null) ??
+          items[0];
+      workspaceId = (match?.id ?? "").trim();
+    }
+
+    if (!workspaceId) {
+      throw new Error("Could not resolve this worker on the OpenWork host.");
+    }
+
+    return { client, workspaceId, workspace: ws };
+  };
+
+  const publishWorkspaceProfileLink = async () => {
+    if (shareWorkspaceProfileBusy()) return;
+    setShareWorkspaceProfileBusy(true);
+    setShareWorkspaceProfileError(null);
+    setShareWorkspaceProfileUrl(null);
+
+    try {
+      const { client, workspaceId, workspace } = await resolveShareExportContext();
+      const exported = await client.exportWorkspace(workspaceId);
+      const payload: WorkspaceProfileBundleV1 = {
+        schemaVersion: 1,
+        type: "workspace-profile",
+        name: `${workspaceLabel(workspace)} profile`,
+        description: "Full OpenWork workspace profile with config, MCP setup, commands, and skills.",
+        workspace: exported,
+      };
+
+      const result = await publishOpenworkBundleJson({
+        payload,
+        bundleType: "workspace-profile",
+        name: payload.name,
+      });
+
+      setShareWorkspaceProfileUrl(result.url);
+      try {
+        await navigator.clipboard.writeText(result.url);
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      setShareWorkspaceProfileError(error instanceof Error ? error.message : "Failed to publish workspace profile");
+    } finally {
+      setShareWorkspaceProfileBusy(false);
+    }
+  };
+
+  const publishSkillsSetLink = async () => {
+    if (shareSkillsSetBusy()) return;
+    setShareSkillsSetBusy(true);
+    setShareSkillsSetError(null);
+    setShareSkillsSetUrl(null);
+
+    try {
+      const { client, workspaceId, workspace } = await resolveShareExportContext();
+      const exported = await client.exportWorkspace(workspaceId);
+      const skills = Array.isArray(exported.skills) ? exported.skills : [];
+      if (!skills.length) {
+        throw new Error("No skills found in this workspace.");
+      }
+
+      const payload: SkillsSetBundleV1 = {
+        schemaVersion: 1,
+        type: "skills-set",
+        name: `${workspaceLabel(workspace)} skills`,
+        description: "Complete skills set from an OpenWork workspace.",
+        skills: skills.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          trigger: skill.trigger,
+          content: skill.content,
+        })),
+        sourceWorkspace: {
+          id: workspaceId,
+          name: workspaceLabel(workspace),
+        },
+      };
+
+      const result = await publishOpenworkBundleJson({
+        payload,
+        bundleType: "skills-set",
+        name: payload.name,
+      });
+
+      setShareSkillsSetUrl(result.url);
+      try {
+        await navigator.clipboard.writeText(result.url);
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      setShareSkillsSetError(error instanceof Error ? error.message : "Failed to publish skills set");
+    } finally {
+      setShareSkillsSetBusy(false);
+    }
+  };
+
+  const exportDisabledReason = createMemo(() => {
+    const ws = shareWorkspace();
+    if (!ws) return "Export is available for local workers in the desktop app.";
+    if (ws.workspaceType === "remote") return "Export is only supported for local workers.";
+    if (!isTauriRuntime()) return "Export is available in the desktop app.";
+    if (props.exportWorkspaceBusy) return "Export is already running.";
+    return null;
+  });
+
+  const showUpdatePill = createMemo(() => {
+    if (!isTauriRuntime()) return false;
+    const state = props.updateStatus?.state;
+    return state === "available" || state === "downloading" || state === "ready";
+  });
+
+  const updateDownloadPercent = createMemo<number | null>(() => {
+    const total = props.updateStatus?.totalBytes;
+    if (total == null || total <= 0) return null;
+    const downloaded = props.updateStatus?.downloadedBytes ?? 0;
+    const clamped = Math.max(0, Math.min(1, downloaded / total));
+    return Math.floor(clamped * 100);
+  });
+
+  const updatePillLabel = createMemo(() => {
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns ? "Update ready" : "Install update";
+    }
+    if (state === "downloading") {
+      const percent = updateDownloadPercent();
+      return percent == null ? "Downloading" : `Downloading ${percent}%`;
+    }
+    return "Update available";
+  });
+
+  const updatePillButtonTone = createMemo(() => {
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns
+        ? "text-amber-11 hover:text-amber-11 hover:bg-amber-3/30"
+        : "text-green-11 hover:text-green-11 hover:bg-green-3/30";
+    }
+    if (state === "downloading") {
+      return "text-blue-11 hover:text-blue-11 hover:bg-blue-3/30";
+    }
+    return "text-dls-secondary hover:text-emerald-11 hover:bg-emerald-3/25";
+  });
+
+  const updatePillBorderTone = createMemo(() => {
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns ? "border-amber-7/35" : "border-green-7/35";
+    }
+    if (state === "downloading") {
+      return "border-blue-7/35";
+    }
+    return "border-dls-border";
+  });
+
+  const updatePillDotTone = createMemo(() => {
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns ? "text-amber-10 fill-amber-10" : "text-green-10 fill-green-10";
+    }
+    if (state === "downloading") {
+      return "text-blue-10";
+    }
+    return "text-emerald-10 fill-emerald-10";
+  });
+
+  const updatePillVersionTone = createMemo(() => {
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns ? "text-amber-11/75" : "text-green-11/75";
+    }
+    if (state === "downloading") {
+      return "text-blue-11/75";
+    }
+    return "text-dls-secondary";
+  });
+
+  const updatePillTitle = createMemo(() => {
+    const version = props.updateStatus?.version ? `v${props.updateStatus.version}` : "";
+    const state = props.updateStatus?.state;
+    if (state === "ready") {
+      return props.anyActiveRuns
+        ? `Update ready ${version}. Stop active runs to restart.`
+        : `Restart to apply update ${version}`;
+    }
+    if (state === "downloading") return `Downloading update ${version}`;
+    return `Update available ${version}`;
+  });
+
+  const handleUpdatePillClick = () => {
+    const state = props.updateStatus?.state;
+    if (state === "ready" && !props.anyActiveRuns) {
+      props.installUpdateAndRestart();
+      return;
+    }
+    openSettings("advanced");
+  };
+
   return (
-    <div class="flex h-screen bg-gray-1 text-gray-12 overflow-hidden">
-      <aside class="w-64 border-r border-gray-6 p-6 hidden md:flex flex-col justify-between bg-gray-1">
-        <div>
-            <div class="flex items-center gap-3 mb-10 px-2">
-            <div class="">
-              <OpenWorkLogo size={32} />
-            </div>
-            <span class="font-bold text-lg tracking-tight">OpenWork</span>
-          </div>
-
-          <nav class="space-y-1">
-            {navItem("home", translate("nav.dashboard"), <Command size={18} />)}
-            {navItem("sessions", translate("nav.sessions"), <Play size={18} />)}
-            {navItem("scheduled", translate("nav.scheduled_tasks"), <Calendar size={18} />)}
-            {navItem("commands", translate("nav.commands"), <Terminal size={18} />)}
-            {navItem("skills", translate("nav.skills"), <Package size={18} />)}
-            {navItem("plugins", translate("nav.plugins"), <Cpu size={18} />)}
-            {navItem(
-              "mcp",
-              <span class="inline-flex items-center gap-2">
-                {translate("nav.mcp")}
-                <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-7/20 text-amber-12">
-                  {translate("nav.mcp_alpha")}
-                </span>
-              </span>,
-              <Server size={18} />,
-            )}
-          </nav>
-        </div>
-
-        <div class="space-y-4">
-
-          <Show
-            when={
-              props.activeWorkspaceDisplay.workspaceType === "remote" &&
-              props.openworkServerStatus === "disconnected"
-            }
-          >
-            <div class="text-[11px] text-gray-9 px-1">
-              {translate("nav.server_offline_hint")}
-            </div>
-          </Show>
-
-          <Show when={!props.clientConnected}>
-            <Button
-              variant="secondary"
-              onClick={() => props.setWorkspacePickerOpen(true)}
-              disabled={props.busy}
-              class="w-full"
+    <div class="flex h-screen w-full bg-dls-surface text-dls-text font-sans overflow-hidden">
+      <aside class="w-64 hidden md:flex flex-col bg-dls-sidebar border-r border-dls-border p-4">
+        <div class="flex-1 overflow-y-auto">
+          <Show when={showUpdatePill()}>
+            <button
+              type="button"
+              class={`group mb-3 w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--dls-accent-rgb),0.2)] ${updatePillButtonTone()}`}
+              onClick={handleUpdatePillClick}
+              title={updatePillTitle()}
+              aria-label={updatePillTitle()}
             >
-              {translate("nav.connect_folder")}
-            </Button>
-          </Show>
-        </div>
-      </aside>
-
-      <main class="flex-1 overflow-y-auto relative pb-24 md:pb-12">
-        <header class="h-16 flex items-center justify-between px-6 md:px-10 border-b border-gray-6 sticky top-0 bg-gray-1/80 backdrop-blur-md z-10">
-          <div class="flex items-center gap-3">
-            <WorkspaceChip
-              workspace={props.activeWorkspaceDisplay}
-              connecting={props.connectingWorkspaceId === props.activeWorkspaceDisplay.id}
-              onClick={() => {
-                props.setWorkspaceSearch("");
-                props.setWorkspacePickerOpen(true);
-              }}
-            />
-            <h1 class="text-lg font-medium">{title()}</h1>
-            <Show when={props.developerMode}>
-              <span class="text-xs text-gray-7">{props.headerStatus}</span>
-            </Show>
-            <Show when={props.busyHint}>
-              <span class="text-xs text-gray-10">{props.busyHint}</span>
-            </Show>
-          </div>
-          <div class="flex items-center gap-2">
-            <Show when={props.tab === "home" || props.tab === "sessions"}>
-              <Button
-                variant="outline"
-                class="text-xs h-9"
-                onClick={props.exportWorkspaceConfig}
-                disabled={!canExportWorkspace() || props.exportWorkspaceBusy}
-                title={
-                  !canExportWorkspace()
-                    ? translate("dashboard.export_local_only")
-                    : translate("dashboard.export_config")
+              <Show
+                when={props.updateStatus?.state === "downloading"}
+                fallback={
+                  <Circle
+                    size={8}
+                    class={`${updatePillDotTone()} shrink-0 ${props.updateStatus?.state === "available" ? "group-hover:animate-pulse" : ""}`}
+                  />
                 }
               >
-                {translate("dashboard.share_config")}
-              </Button>
-              <Button
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture?.(e.pointerId);
-                }}
-                onPointerUp={() => {
-                  console.log("[DEBUG] new task button pointerup");
-                  props.createSessionAndOpen();
-                }}
-                disabled={props.newTaskDisabled}
-                title={props.newTaskDisabled ? props.busyHint ?? translate("dashboard.busy") : ""}
-              >
-                <Play size={16} />
-                {translate("dashboard.new_task")}
-              </Button>
-            </Show>
+                <Loader2 size={13} class={`animate-spin shrink-0 ${updatePillDotTone()}`} />
+              </Show>
+              <span class="flex-1 text-left">{updatePillLabel()}</span>
+              <Show when={props.updateStatus?.version}>
+                {(version) => (
+                  <span class={`ml-auto font-mono text-[10px] ${updatePillVersionTone()}`}>v{version()}</span>
+                )}
+              </Show>
+            </button>
+          </Show>
+          <WorkspaceSessionList
+            workspaceSessionGroups={props.workspaceSessionGroups}
+            activeWorkspaceId={props.activeWorkspaceId}
+            selectedSessionId={props.selectedSessionId}
+            connectingWorkspaceId={props.connectingWorkspaceId}
+            newTaskDisabled={props.newTaskDisabled}
+            importingWorkspaceConfig={props.importingWorkspaceConfig}
+            soulStatusByWorkspaceId={props.soulStatusByWorkspaceId}
+            onActivateWorkspace={props.activateWorkspace}
+            onOpenSession={openSessionFromList}
+            onCreateTaskInWorkspace={createTaskInWorkspace}
+            onOpenRenameWorkspace={props.openRenameWorkspace}
+            onShareWorkspace={(workspaceId) => setShareWorkspaceId(workspaceId)}
+            onOpenSoul={openSoulForWorkspace}
+            onRevealWorkspace={revealWorkspaceInFinder}
+            onRecoverWorkspace={props.recoverWorkspace}
+            onTestWorkspaceConnection={props.testWorkspaceConnection}
+            onEditWorkspaceConnection={props.editWorkspaceConnection}
+            onForgetWorkspace={props.forgetWorkspace}
+            onOpenCreateWorkspace={props.openCreateWorkspace}
+            onOpenCreateRemoteWorkspace={props.openCreateRemoteWorkspace}
+            onImportWorkspaceConfig={props.importWorkspaceConfig}
+          />
+        </div>
 
-            <Show when={props.tab === "commands"}>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const reset = props.resetCommandDraft;
-                  if (reset) {
-                    reset("workspace");
-                  } else {
-                    props.setCommandDraftName("");
-                    props.setCommandDraftDescription("");
-                    props.setCommandDraftTemplate("");
-                    props.setCommandDraftScope("workspace");
-                  }
-                  props.openCommandModal();
-                }}
-                disabled={props.busy}
+      </aside>
+
+      <main class="flex-1 flex flex-col overflow-hidden bg-dls-surface">
+        <div class="flex-1 overflow-y-auto">
+        <header class="h-14 flex items-center justify-between px-6 md:px-10 border-b border-dls-border sticky top-0 bg-dls-surface z-10">
+          <div class="flex items-center gap-3">
+            <Show when={showUpdatePill()}>
+              <button
+                type="button"
+                class={`md:hidden flex items-center gap-1.5 rounded-full border bg-dls-surface px-2.5 py-1 text-xs font-medium shadow-sm transition-colors active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--dls-accent-rgb),0.2)] ${updatePillBorderTone()} ${updatePillButtonTone()}`}
+                onClick={handleUpdatePillClick}
+                title={updatePillTitle()}
+                aria-label={updatePillTitle()}
               >
-                <Plus size={16} />
-                {translate("dashboard.new")}
-              </Button>
+                <Show
+                  when={props.updateStatus?.state === "downloading"}
+                  fallback={
+                    <Circle
+                      size={8}
+                      class={`${updatePillDotTone()} shrink-0 ${props.updateStatus?.state === "available" ? "animate-pulse" : ""}`}
+                    />
+                  }
+                >
+                  <Loader2 size={13} class={`animate-spin shrink-0 ${updatePillDotTone()}`} />
+                </Show>
+                <span class="text-[11px]">{updatePillLabel()}</span>
+                <Show when={props.updateStatus?.version}>
+                  {(version) => (
+                    <span class={`hidden sm:inline font-mono text-[10px] ${updatePillVersionTone()}`}>v{version()}</span>
+                  )}
+                </Show>
+              </button>
+            </Show>
+            <div class="px-3 py-1.5 rounded-xl bg-dls-hover text-xs text-dls-secondary font-medium">
+              {props.activeWorkspaceDisplay.name}
+            </div>
+            <Show when={props.activeSoulStatus?.enabled}>
+              <div class="inline-flex items-center gap-1 rounded-full border border-rose-7/40 bg-rose-3/40 px-2 py-1 text-[11px] text-rose-11">
+                <HeartPulse size={11} />
+                Soul on
+              </div>
+            </Show>
+            <h1 class="text-lg font-medium">{title()}</h1>
+            <Show when={props.developerMode}>
+              <span class="text-xs text-dls-secondary">{props.headerStatus}</span>
+            </Show>
+            <Show when={props.busyHint}>
+              <span class="text-xs text-dls-secondary">{props.busyHint}</span>
             </Show>
           </div>
+          <div class="flex items-center gap-2" />
         </header>
 
         <div class="p-6 md:p-10 max-w-5xl mx-auto space-y-10">
           <Switch>
-            <Match when={props.tab === "home"}>
-              <section>
-                <div class="bg-gradient-to-r from-gray-2 to-gray-4 rounded-3xl p-1 ">
-                  <div class="bg-gray-1 rounded-[22px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div class="space-y-2 text-center md:text-left">
-                      <h2 class="text-2xl font-semibold text-gray-12">
-                        {translate("dashboard.hero_title")}
-                      </h2>
-                      <p class="text-gray-11">
-                        {translate("dashboard.hero_description")}
-                      </p>
-                    </div>
-                    <div class="w-full md:w-[360px]">
-                      <div class="flex items-center gap-2 rounded-2xl border border-gray-6/60 bg-gray-2/50 px-4 py-3 shadow-lg shadow-gray-12/5 focus-within:border-gray-7 focus-within:bg-gray-2 transition-all">
-                        <input
-                          value={taskDraft()}
-                          onInput={(event) => setTaskDraft(event.currentTarget.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" && !event.shiftKey) {
-                              event.preventDefault();
-                              startTask();
-                            }
-                          }}
-                          placeholder={translate("dashboard.task_placeholder")}
-                          class="flex-1 bg-transparent border-none p-0 text-sm text-gray-12 placeholder-gray-7 focus:ring-0"
-                          aria-label={translate("dashboard.task_aria_label")}
-                          disabled={props.newTaskDisabled}
-                        />
-                        <button
-                          type="button"
-                          onClick={startTask}
-                          disabled={!canCreateTask()}
-                          class="rounded-xl bg-gray-12 px-3 py-1.5 text-xs font-semibold text-gray-1 shadow-md transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
-                          title={
-                            props.newTaskDisabled ? props.busyHint ?? translate("dashboard.busy") : ""
-                          }
-                        >
-                          {translate("dashboard.run")}
-                        </button>
-                      </div>
-                      <div class="mt-2 text-[11px] text-gray-9 text-center md:text-left">
-                        {translate("dashboard.enter_to_start")}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider">
-                    {translate("dashboard.quick_start_commands")}
-                  </h3>
-                  <button
-                    class="text-sm text-gray-10 hover:text-gray-12"
-                    onClick={() => props.setTab("commands")}
-                  >
-                    {translate("dashboard.view_all")}
-                  </button>
-                </div>
-
-                <Show
-                  when={quickCommands().length}
-                  fallback={
-                    <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl p-6 text-sm text-gray-10">
-                      {translate("dashboard.no_commands")}
-                    </div>
-                  }
-                >
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <For each={quickCommands()}>
-                      {(command) => (
-                        <button
-                          onClick={() => props.runCommand(command)}
-                          class="group p-5 rounded-2xl bg-gray-2/30 border border-gray-6/50 hover:bg-gray-2 hover:border-gray-7 transition-all text-left"
-                        >
-                          <div class="w-10 h-10 rounded-full bg-gray-4 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <Terminal size={20} class="text-indigo-11" />
-                          </div>
-                          <h4 class="font-medium text-gray-12 mb-1">/{command.name}</h4>
-                          <p class="text-sm text-gray-10">
-                            {command.description || translate("dashboard.run_command")}
-                          </p>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </section>
-
-              <section>
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider">
-                    {translate("dashboard.workspaces")}
-                  </h3>
-                  <div class="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      class="text-xs h-8 px-3"
-                      onClick={props.exportWorkspaceConfig}
-                      disabled={!canExportWorkspace() || props.exportWorkspaceBusy}
-                      title={
-                        !canExportWorkspace()
-                          ? translate("dashboard.export_local_only")
-                          : translate("dashboard.export_config")
-                      }
-                    >
-                      {translate("dashboard.share_config")}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      class="text-xs h-8 px-3"
-                      onClick={() => props.setWorkspacePickerOpen(true)}
-                    >
-                      <Plus size={14} />
-                      {translate("dashboard.add_workspace")}
-                    </Button>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <For each={props.workspaces}>
-                    {(workspace) => (
-                      <div class="rounded-2xl border border-gray-6/60 bg-gray-1/40 p-4 space-y-3">
-                        <div class="flex items-start justify-between">
-                          <div class="space-y-1 min-w-0">
-                            <div class="text-sm font-semibold text-gray-12 truncate">
-                              {workspace.displayName ?? workspace.name}
-                            </div>
-                            <div class="flex items-center gap-2 text-xs text-gray-10 font-mono">
-                              <span class="truncate min-w-0">
-                                {workspacePathLabel(workspace)}
-                              </span>
-                              <button
-                                type="button"
-                                class="shrink-0 rounded-md p-1 text-gray-9 hover:text-gray-12 hover:bg-gray-3 transition-colors"
-                                onClick={() => handleCopyWorkspace(workspace)}
-                                title={
-                                  copiedWorkspaceId() === workspace.id
-                                    ? translate("dashboard.copied")
-                                    : translate("dashboard.copy_path")
-                                }
-                                aria-label={translate("dashboard.copy_path")}
-                              >
-                                <Show when={copiedWorkspaceId() === workspace.id} fallback={<Copy size={12} />}>
-                                  <Check size={12} class="text-green-11" />
-                                </Show>
-                              </button>
-                            </div>
-                          </div>
-                          <span class="text-[11px] text-gray-9">
-                            {workspace.workspaceType === "remote"
-                              ? translate("dashboard.remote")
-                              : translate("dashboard.local")}
-                          </span>
-                        </div>
-                        <div class="flex items-center justify-end text-xs text-gray-9 h-8">
-                          <Show when={workspace.id === props.activeWorkspaceId}>
-                            <span class="text-green-11 font-medium flex items-center gap-1.5 !px-2">
-                              {translate("dashboard.active")}
-                            </span>
-                          </Show>
-                          <Show when={workspace.id !== props.activeWorkspaceId}>
-                            <Button
-                              variant="ghost"
-                              class="text-xs !px-2 py-1"
-                              onClick={() => props.activateWorkspace(workspace.id)}
-                              disabled={props.connectingWorkspaceId === workspace.id}
-                            >
-                              {props.connectingWorkspaceId === workspace.id
-                                ? translate("dashboard.switching")
-                                : translate("dashboard.switch")}
-                            </Button>
-                          </Show>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </section>
-
-              <section>
-                <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider mb-4">
-                  {translate("dashboard.recent_sessions")}
-                </h3>
-
-                <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl overflow-hidden">
-                  <For each={props.sessions.slice(0, 3)}>
-                    {(s, idx) => (
-                      <button
-                        class={`w-full p-4 flex items-center justify-between hover:bg-gray-4/50 transition-colors text-left ${
-                          idx() !== Math.min(props.sessions.length, 3) - 1
-                            ? "border-b border-gray-6/50"
-                            : ""
-                        }`}
-                        onPointerDown={(e) => {
-                          e.currentTarget.setPointerCapture?.(e.pointerId);
-                        }}
-                        onPointerUp={() => {
-                          openSessionFromList(s.id);
-                        }}
-                      >
-                        <div class="flex items-center gap-4">
-                          <div class="w-8 h-8 rounded-full bg-gray-4 flex items-center justify-center text-xs text-gray-10 font-mono">
-                            #{s.slug?.slice(0, 2) ?? ".."}
-                          </div>
-                          <div>
-                            <div class="font-medium text-sm text-gray-12">
-                              {s.title}
-                            </div>
-                            <div class="text-xs text-gray-10 flex items-center gap-2">
-                              <span class="flex items-center gap-1">
-                                {formatRelativeTime(s.time.updated)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="flex items-center gap-4">
-                          <span class="text-xs px-2 py-0.5 rounded-full border border-gray-7/60 text-gray-11 flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full bg-current" />
-                            {sessionStatusLabel(props.sessionStatusById[s.id])}
-                          </span>
-                        </div>
-                      </button>
-                    )}
-                  </For>
-
-                  <Show when={!props.sessions.length}>
-                    <div class="p-6 text-sm text-gray-10 space-y-3">
-                      <div>{translate("dashboard.no_sessions")}</div>
-                      <Button
-                        variant="secondary"
-                        class="text-xs h-8"
-                        onClick={props.createSessionAndOpen}
-                        disabled={props.newTaskDisabled}
-                      >
-                        {translate("dashboard.start_task")}
-                      </Button>
-                    </div>
-                  </Show>
-                </div>
-              </section>
-            </Match>
-
-            <Match when={props.tab === "sessions"}>
-              <section>
-                <h3 class="text-sm font-medium text-gray-11 uppercase tracking-wider mb-4">
-                  {translate("dashboard.sessions")}
-                </h3>
-
-                <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl overflow-hidden">
-                  <For each={props.sessions}>
-                    {(s, idx) => (
-                      <button
-                        class={`w-full p-4 flex items-center justify-between hover:bg-gray-4/50 transition-colors text-left ${
-                          idx() !== props.sessions.length - 1
-                            ? "border-b border-gray-6/50"
-                            : ""
-                        }`}
-                        onPointerDown={(e) => {
-                          e.currentTarget.setPointerCapture?.(e.pointerId);
-                        }}
-                        onPointerUp={() => {
-                          openSessionFromList(s.id);
-                        }}
-                      >
-                        <div class="flex items-center gap-4">
-                          <div class="w-8 h-8 rounded-full bg-gray-4 flex items-center justify-center text-xs text-gray-10 font-mono">
-                            #{s.slug?.slice(0, 2) ?? ".."}
-                          </div>
-                          <div>
-                            <div class="font-medium text-sm text-gray-12">
-                              {s.title}
-                            </div>
-                            <div class="text-xs text-gray-10 flex items-center gap-2">
-                              <span class="flex items-center gap-1">
-                                {formatRelativeTime(s.time.updated)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="flex items-center gap-4">
-                          <span class="text-xs px-2 py-0.5 rounded-full border border-gray-7/60 text-gray-11 flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full bg-current" />
-                            {sessionStatusLabel(props.sessionStatusById[s.id])}
-                          </span>
-                        </div>
-                      </button>
-                    )}
-                  </For>
-
-                  <Show when={!props.sessions.length}>
-                    <div class="p-6 text-sm text-gray-10">
-                      {translate("dashboard.no_sessions")}
-                    </div>
-                  </Show>
-                </div>
-              </section>
-            </Match>
-
             <Match when={props.tab === "scheduled"}>
               <ScheduledTasksView
                 jobs={props.scheduledJobs}
@@ -895,47 +1149,78 @@ export default function DashboardView(props: DashboardViewProps) {
                 refreshJobs={props.refreshScheduledJobs}
                 deleteJob={props.deleteScheduledJob}
                 isWindows={props.isWindows}
+                activeWorkspaceRoot={props.activeWorkspaceRoot}
+                createSessionAndOpen={props.createSessionAndOpen}
+                setPrompt={props.setPrompt}
+                newTaskDisabled={props.newTaskDisabled}
+                schedulerInstalled={props.schedulerPluginInstalled}
+                canEditPlugins={props.canEditPlugins}
+                addPlugin={props.addPlugin}
+                reloadWorkspaceEngine={props.reloadWorkspaceEngine}
+                reloadBusy={props.reloadBusy}
+                canReloadWorkspace={props.canReloadWorkspace}
               />
             </Match>
-            <Match when={props.tab === "commands"}>
-              <CommandsView
-                busy={props.busy}
-                workspaceCommands={props.workspaceCommands}
-                globalCommands={props.globalCommands}
-                otherCommands={props.otherCommands}
-                setCommandDraftName={props.setCommandDraftName}
-                setCommandDraftDescription={props.setCommandDraftDescription}
-                setCommandDraftTemplate={props.setCommandDraftTemplate}
-                setCommandDraftScope={props.setCommandDraftScope}
-                openCommandModal={props.openCommandModal}
-                resetCommandDraft={props.resetCommandDraft}
-                runCommand={props.runCommand}
-                deleteCommand={props.deleteCommand}
-                justSavedCommand={props.justSavedCommand}
-                clearJustSavedCommand={props.clearJustSavedCommand}
+            <Match when={props.tab === "soul"}>
+              <SoulView
+                workspaceName={props.activeWorkspaceDisplay.name}
+                workspaceRoot={props.activeWorkspaceRoot}
+                status={props.activeSoulStatus}
+                heartbeats={props.activeSoulHeartbeats}
+                loading={props.soulStatusBusy}
+                loadingHeartbeats={props.soulHeartbeatsBusy}
+                error={props.soulError}
+                newTaskDisabled={props.newTaskDisabled}
+                refresh={props.refreshSoulData}
+                runSoulPrompt={props.runSoulPrompt}
               />
             </Match>
-
             <Match when={props.tab === "skills"}>
               <SkillsView
+                workspaceName={props.activeWorkspaceDisplay.name}
                 busy={props.busy}
                 canInstallSkillCreator={props.canInstallSkillCreator}
                 canUseDesktopTools={props.canUseDesktopTools}
                 accessHint={props.skillsAccessHint}
                 refreshSkills={props.refreshSkills}
+                refreshHubSkills={props.refreshHubSkills}
                 skills={props.skills}
                 skillsStatus={props.skillsStatus}
+                hubSkills={props.hubSkills}
+                hubSkillsStatus={props.hubSkillsStatus}
                 importLocalSkill={props.importLocalSkill}
                 installSkillCreator={props.installSkillCreator}
+                installHubSkill={props.installHubSkill}
                 revealSkillsFolder={props.revealSkillsFolder}
                 uninstallSkill={props.uninstallSkill}
+                readSkill={props.readSkill}
+                saveSkill={props.saveSkill}
+                createSessionAndOpen={props.createSessionAndOpen}
+                setPrompt={props.setPrompt}
               />
             </Match>
 
-            <Match when={props.tab === "plugins"}>
-              <PluginsView
+            <Match when={props.tab === "plugins" || props.tab === "mcp"}>
+              <ExtensionsView
+                initialSection={props.tab === "plugins" ? "plugins" : "mcp"}
+                setDashboardTab={props.setTab}
                 busy={props.busy}
                 activeWorkspaceRoot={props.activeWorkspaceRoot}
+                refreshMcpServers={props.refreshMcpServers}
+                mcpServers={props.mcpServers}
+                mcpStatus={props.mcpStatus}
+                mcpLastUpdatedAt={props.mcpLastUpdatedAt}
+                mcpStatuses={props.mcpStatuses}
+                mcpConnectingName={props.mcpConnectingName}
+                selectedMcp={props.selectedMcp}
+                setSelectedMcp={props.setSelectedMcp}
+                quickConnect={props.quickConnect}
+                connectMcp={props.connectMcp}
+                logoutMcpAuth={props.logoutMcpAuth}
+                removeMcp={props.removeMcp}
+                showMcpReloadBanner={props.showMcpReloadBanner}
+                reloadBlocked={props.mcpReloadBlocked}
+                reloadMcpEngine={props.reloadMcpEngine}
                 canEditPlugins={props.canEditPlugins}
                 canUseGlobalScope={props.canUseGlobalPluginScope}
                 accessHint={props.pluginsAccessHint}
@@ -952,25 +1237,47 @@ export default function DashboardView(props: DashboardViewProps) {
                 suggestedPlugins={props.suggestedPlugins}
                 refreshPlugins={props.refreshPlugins}
                 addPlugin={props.addPlugin}
+                removePlugin={props.removePlugin}
               />
             </Match>
 
-            <Match when={props.tab === "mcp"}>
-              <McpView
+            <Match when={props.tab === "identities"}>
+              <IdentitiesView
                 busy={props.busy}
+                openworkServerStatus={props.openworkServerStatus}
+                openworkServerUrl={props.openworkServerUrl}
+                openworkServerClient={props.openworkServerClient}
+                openworkReconnectBusy={props.openworkReconnectBusy}
+                reconnectOpenworkServer={props.reconnectOpenworkServer}
+                openworkServerWorkspaceId={props.openworkServerWorkspaceId}
                 activeWorkspaceRoot={props.activeWorkspaceRoot}
-                mcpServers={props.mcpServers}
-                mcpStatus={props.mcpStatus}
-                mcpLastUpdatedAt={props.mcpLastUpdatedAt}
-                mcpStatuses={props.mcpStatuses}
-                mcpConnectingName={props.mcpConnectingName}
-                selectedMcp={props.selectedMcp}
-                setSelectedMcp={props.setSelectedMcp}
-                quickConnect={props.quickConnect}
-                connectMcp={props.connectMcp}
-                showMcpReloadBanner={props.showMcpReloadBanner}
-                reloadBlocked={props.mcpReloadBlocked}
-                reloadMcpEngine={props.reloadMcpEngine}
+                developerMode={props.developerMode}
+              />
+            </Match>
+
+            <Match when={props.tab === "config" && props.developerMode}>
+              <ConfigView
+                busy={props.busy}
+                clientConnected={props.clientConnected}
+                anyActiveRuns={props.anyActiveRuns}
+                openworkServerStatus={props.openworkServerStatus}
+                openworkServerUrl={props.openworkServerUrl}
+                openworkServerSettings={props.openworkServerSettings}
+                openworkServerHostInfo={props.openworkServerHostInfo}
+                openworkServerWorkspaceId={props.openworkServerWorkspaceId}
+                updateOpenworkServerSettings={props.updateOpenworkServerSettings}
+                resetOpenworkServerSettings={props.resetOpenworkServerSettings}
+                testOpenworkServerConnection={props.testOpenworkServerConnection}
+                canReloadWorkspace={props.canReloadWorkspace}
+                reloadWorkspaceEngine={props.reloadWorkspaceEngine}
+                reloadBusy={props.reloadBusy}
+                reloadError={props.reloadError}
+                workspaceAutoReloadAvailable={props.workspaceAutoReloadAvailable}
+                workspaceAutoReloadEnabled={props.workspaceAutoReloadEnabled}
+                setWorkspaceAutoReloadEnabled={props.setWorkspaceAutoReloadEnabled}
+                workspaceAutoReloadResumeEnabled={props.workspaceAutoReloadResumeEnabled}
+                setWorkspaceAutoReloadResumeEnabled={props.setWorkspaceAutoReloadResumeEnabled}
+                developerMode={props.developerMode}
               />
             </Match>
 
@@ -988,32 +1295,28 @@ export default function DashboardView(props: DashboardViewProps) {
                   openProviderAuthModal={props.openProviderAuthModal}
                   openworkServerStatus={props.openworkServerStatus}
                   openworkServerUrl={props.openworkServerUrl}
-                  openworkServerSettings={props.openworkServerSettings}
+                  openworkReconnectBusy={props.openworkReconnectBusy}
+                  reconnectOpenworkServer={props.reconnectOpenworkServer}
                   openworkServerHostInfo={props.openworkServerHostInfo}
                   openworkServerCapabilities={props.openworkServerCapabilities}
                   openworkServerDiagnostics={props.openworkServerDiagnostics}
                   openworkServerWorkspaceId={props.openworkServerWorkspaceId}
-                  clientConnected={props.clientConnected}
-                  canReloadWorkspace={props.canReloadWorkspace}
-                  reloadWorkspaceEngine={props.reloadWorkspaceEngine}
-                  reloadBusy={props.reloadBusy}
-                  reloadError={props.reloadError}
                   openworkAuditEntries={props.openworkAuditEntries}
                   openworkAuditStatus={props.openworkAuditStatus}
                   openworkAuditError={props.openworkAuditError}
                   opencodeConnectStatus={props.opencodeConnectStatus}
                   engineInfo={props.engineInfo}
-                  openwrkStatus={props.openwrkStatus}
-                  owpenbotInfo={props.owpenbotInfo}
+                  orchestratorStatus={props.orchestratorStatus}
+                  opencodeRouterInfo={props.opencodeRouterInfo}
                   engineDoctorVersion={props.engineDoctorVersion}
-                  updateOpenworkServerSettings={props.updateOpenworkServerSettings}
-                  resetOpenworkServerSettings={props.resetOpenworkServerSettings}
-                  testOpenworkServerConnection={props.testOpenworkServerConnection}
                   developerMode={props.developerMode}
                   toggleDeveloperMode={props.toggleDeveloperMode}
                   stopHost={props.stopHost}
+                  restartLocalServer={props.restartLocalServer}
                   engineSource={props.engineSource}
                   setEngineSource={props.setEngineSource}
+                  engineCustomBinPath={props.engineCustomBinPath}
+                  setEngineCustomBinPath={props.setEngineCustomBinPath}
                   engineRuntime={props.engineRuntime}
                   setEngineRuntime={props.setEngineRuntime}
                   isWindows={props.isWindows}
@@ -1022,14 +1325,14 @@ export default function DashboardView(props: DashboardViewProps) {
                   openDefaultModelPicker={props.openDefaultModelPicker}
                   showThinking={props.showThinking}
                   toggleShowThinking={props.toggleShowThinking}
+                  hideTitlebar={props.hideTitlebar}
+                  toggleHideTitlebar={props.toggleHideTitlebar}
                   modelVariantLabel={props.modelVariantLabel}
                   editModelVariant={props.editModelVariant}
-                  keybindItems={props.keybindItems}
-                  onOverrideKeybind={props.onOverrideKeybind}
-                  onResetKeybind={props.onResetKeybind}
-                  onResetAllKeybinds={props.onResetAllKeybinds}
                   updateAutoCheck={props.updateAutoCheck}
                   toggleUpdateAutoCheck={props.toggleUpdateAutoCheck}
+                  updateAutoDownload={props.updateAutoDownload}
+                  toggleUpdateAutoDownload={props.toggleUpdateAutoDownload}
                   themeMode={props.themeMode}
                   setThemeMode={props.setThemeMode}
                   updateStatus={props.updateStatus}
@@ -1044,10 +1347,20 @@ export default function DashboardView(props: DashboardViewProps) {
                   resetModalBusy={props.resetModalBusy}
                   pendingPermissions={props.pendingPermissions}
                   events={props.events}
+                  workspaceDebugEvents={props.workspaceDebugEvents}
+                  clearWorkspaceDebugEvents={props.clearWorkspaceDebugEvents}
                   safeStringify={props.safeStringify}
+                  repairOpencodeMigration={props.repairOpencodeMigration}
+                  migrationRepairBusy={props.migrationRepairBusy}
+                  migrationRepairResult={props.migrationRepairResult}
+                  migrationRepairAvailable={props.migrationRepairAvailable}
+                  migrationRepairUnavailableReason={props.migrationRepairUnavailableReason}
                   repairOpencodeCache={props.repairOpencodeCache}
                   cacheRepairBusy={props.cacheRepairBusy}
                   cacheRepairResult={props.cacheRepairResult}
+                  cleanupOpenworkDockerContainers={props.cleanupOpenworkDockerContainers}
+                  dockerCleanupBusy={props.dockerCleanupBusy}
+                  dockerCleanupResult={props.dockerCleanupResult}
                   notionStatus={props.notionStatus}
                   notionStatusDetail={props.notionStatusDetail}
                   notionError={props.notionError}
@@ -1102,90 +1415,126 @@ export default function DashboardView(props: DashboardViewProps) {
           authMethods={props.providerAuthMethods}
           onSelect={handleProviderAuthSelect}
           onSubmitApiKey={handleProviderAuthApiKey}
+          onSubmitOAuth={handleProviderAuthOAuth}
           onClose={props.closeProviderAuthModal}
         />
 
-        <div class="fixed bottom-0 left-0 right-0">
-          <StatusBar
-            clientConnected={props.clientConnected}
-            openworkServerStatus={props.openworkServerStatus}
-            developerMode={props.developerMode}
-            onOpenSettings={() => openSettings("general")}
-            onOpenMessaging={() => openSettings("messaging")}
-            onOpenProviders={() => props.openProviderAuthModal()}
-            onOpenMcp={() => props.setTab("mcp")}
-            providerConnectedIds={props.providerConnectedIds}
-            mcpStatuses={props.mcpStatuses}
-          />
-          <nav class="md:hidden border-t border-gray-6 bg-gray-1/90 backdrop-blur-md">
-            <div class="mx-auto max-w-5xl px-4 py-3 grid grid-cols-7 gap-2">
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "home" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("home")}
-              >
-                <Command size={18} />
-                Home
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "sessions" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("sessions")}
-              >
-                <Play size={18} />
-                Runs
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "scheduled" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("scheduled")}
-              >
-                <Calendar size={18} />
-                Schedule
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "commands" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("commands")}
-              >
-                <Terminal size={18} />
-                Commands
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "skills" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("skills")}
-              >
-                <Package size={18} />
-                Skills
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "plugins" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("plugins")}
-              >
-                <Cpu size={18} />
-                Plugins
-              </button>
-              <button
-                class={`flex flex-col items-center gap-1 text-xs ${
-                  props.tab === "mcp" ? "text-gray-12" : "text-gray-10"
-                }`}
-                onClick={() => props.setTab("mcp")}
-              >
-                <Server size={18} />
-                MCPs
-              </button>
-            </div>
-          </nav>
+        <ShareWorkspaceModal
+          open={Boolean(shareWorkspaceId())}
+          onClose={() => setShareWorkspaceId(null)}
+          workspaceName={shareWorkspaceName()}
+          workspaceDetail={shareWorkspaceDetail()}
+          fields={shareFields()}
+          note={shareNote()}
+          publisherBaseUrl={DEFAULT_OPENWORK_PUBLISHER_BASE_URL}
+          onShareWorkspaceProfile={publishWorkspaceProfileLink}
+          shareWorkspaceProfileBusy={shareWorkspaceProfileBusy()}
+          shareWorkspaceProfileUrl={shareWorkspaceProfileUrl()}
+          shareWorkspaceProfileError={shareWorkspaceProfileError()}
+          shareWorkspaceProfileDisabledReason={shareServiceDisabledReason()}
+          onShareSkillsSet={publishSkillsSetLink}
+          shareSkillsSetBusy={shareSkillsSetBusy()}
+          shareSkillsSetUrl={shareSkillsSetUrl()}
+          shareSkillsSetError={shareSkillsSetError()}
+          shareSkillsSetDisabledReason={shareServiceDisabledReason()}
+          onExportConfig={
+            exportDisabledReason()
+              ? undefined
+              : () => {
+                const id = shareWorkspaceId();
+                if (!id) return;
+                props.exportWorkspaceConfig(id);
+              }
+          }
+          exportDisabledReason={exportDisabledReason()}
+          onOpenBots={openConfig}
+        />
         </div>
+
+        <StatusBar
+          clientConnected={props.clientConnected}
+          openworkServerStatus={props.openworkServerStatus}
+          developerMode={props.developerMode}
+          onOpenSettings={() => openSettings("general")}
+          onOpenMessaging={openConfig}
+          onOpenProviders={() => props.openProviderAuthModal()}
+          onOpenMcp={() => props.setTab("mcp")}
+          providerConnectedIds={props.providerConnectedIds}
+          mcpStatuses={props.mcpStatuses}
+        />
+        <nav class="md:hidden border-t border-dls-border bg-dls-surface">
+          <div class={`mx-auto max-w-5xl px-4 py-3 grid gap-2 ${props.developerMode ? "grid-cols-6" : "grid-cols-5"}`}>
+            <button
+              class={`flex flex-col items-center gap-1 text-xs ${
+                props.tab === "scheduled" ? "text-gray-12" : "text-gray-10"
+              }`}
+              onClick={() => props.setTab("scheduled")}
+            >
+              <History size={18} />
+              Automations
+            </button>
+            <button
+              class={`flex flex-col items-center gap-1 text-xs ${
+                props.tab === "soul" ? "text-gray-12" : "text-gray-10"
+              }`}
+              onClick={() => props.setTab("soul")}
+            >
+              <HeartPulse size={18} class={soulNavIconClass()} />
+              Soul
+            </button>
+            <button
+              class={`flex flex-col items-center gap-1 text-xs ${
+                props.tab === "skills" ? "text-gray-12" : "text-gray-10"
+              }`}
+              onClick={() => props.setTab("skills")}
+            >
+              <Zap size={18} />
+              Skills
+            </button>
+            <button
+              class={`flex flex-col items-center gap-1 text-xs ${
+                props.tab === "mcp" || props.tab === "plugins" ? "text-gray-12" : "text-gray-10"
+              }`}
+              onClick={() => props.setTab("mcp")}
+            >
+              <Box size={18} />
+              Extensions
+            </button>
+            <button
+              class={`flex flex-col items-center gap-1 text-xs ${
+                props.tab === "identities" ? "text-gray-12" : "text-gray-10"
+              }`}
+              onClick={() => props.setTab("identities")}
+            >
+              <MessageCircle size={18} />
+              IDs
+            </button>
+            <Show when={props.developerMode}>
+              <button
+                class={`flex flex-col items-center gap-1 text-xs ${
+                  props.tab === "config" ? "text-gray-12" : "text-gray-10"
+                }`}
+                onClick={() => props.setTab("config")}
+              >
+                <SlidersHorizontal size={18} />
+                Advanced
+              </button>
+            </Show>
+          </div>
+        </nav>
       </main>
+
+      <aside class="w-56 hidden md:flex flex-col bg-dls-sidebar border-l border-dls-border p-4">
+        <div class="space-y-1 pt-2">
+          {navItem("scheduled", "Automations", <History size={18} />)}
+          {navItem("soul", "Soul", <HeartPulse size={18} class={soulNavIconClass()} />)}
+          {navItem("skills", "Skills", <Zap size={18} />)}
+          {navItem("mcp", "Extensions", <Box size={18} />)}
+          {navItem("identities", "Messaging", <MessageCircle size={18} />)}
+          <Show when={props.developerMode}>{navItem("config", "Advanced", <SlidersHorizontal size={18} />)}</Show>
+        </div>
+      </aside>
+
     </div>
   );
 }

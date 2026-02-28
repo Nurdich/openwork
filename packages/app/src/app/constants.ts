@@ -5,7 +5,7 @@ export const SESSION_MODEL_PREF_KEY = "openwork.sessionModels";
 export const THINKING_PREF_KEY = "openwork.showThinking";
 export const VARIANT_PREF_KEY = "openwork.modelVariant";
 export const LANGUAGE_PREF_KEY = "openwork.language";
-export const KEYBIND_PREF_KEY = "openwork.keybinds";
+export const HIDE_TITLEBAR_PREF_KEY = "openwork.hideTitlebar";
 
 export const DEFAULT_MODEL: ModelRef = {
   providerID: "opencode",
@@ -19,37 +19,6 @@ export const SUGGESTED_PLUGINS: SuggestedPlugin[] = [
     description: "Run scheduled jobs with the OpenCode scheduler plugin.",
     tags: ["automation", "jobs"],
     installMode: "simple",
-  },
-  {
-    name: "opencode-browser",
-    packageName: "@different-ai/opencode-browser",
-    description: "Browser automation with a local extension + native host.",
-    tags: ["browser", "extension"],
-    aliases: ["opencode-browser"],
-    installMode: "guided",
-    steps: [
-      {
-        title: "Run the installer",
-        description: "Installs the extension + native host and prepares the local broker.",
-        command: "bunx @different-ai/opencode-browser@latest install",
-        note: "Use npx @different-ai/opencode-browser@latest install if you do not have bunx.",
-      },
-      {
-        title: "Load the extension",
-        description:
-          "Open chrome://extensions, enable Developer mode, click Load unpacked, and select the extension folder.",
-        url: "chrome://extensions",
-        path: "~/.opencode-browser/extension",
-      },
-      {
-        title: "Pin the extension",
-        description: "Pin OpenCode Browser Automation in your browser toolbar.",
-      },
-      {
-        title: "Add plugin to config",
-        description: "Click Add to write @different-ai/opencode-browser into opencode.json.",
-      },
-    ],
   },
 ];
 
@@ -106,10 +75,10 @@ export const MCP_QUICK_CONNECT: McpDirectoryInfo[] = [
     oauth: false,
   },
   {
-    name: "Chrome DevTools",
+    name: "Control Chrome",
     description: "Drive Chrome tabs with browser automation.",
     type: "local",
-    command: ["npx", "-y", "chrome-devtools-mcp@latest"],
+    command: ["chrome-devtools-mcp"],
     oauth: false,
   },
 ];

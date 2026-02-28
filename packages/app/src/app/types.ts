@@ -2,6 +2,7 @@ import type {
   Message,
   Part,
   PermissionRequest as ApiPermissionRequest,
+  QuestionRequest,
   ProviderListResponse,
   Session,
 } from "@opencode-ai/sdk/v2/client";
@@ -11,6 +12,24 @@ import type { OpencodeConfigFile, ScheduledJob as TauriScheduledJob, WorkspaceIn
 export type Client = ReturnType<typeof createClient>;
 
 export type ProviderListItem = ProviderListResponse["all"][number];
+
+export type SidebarSessionItem = {
+  id: string;
+  title: string;
+  slug?: string | null;
+  time?: {
+    updated?: number | null;
+    created?: number | null;
+  };
+  directory?: string | null;
+};
+
+export type WorkspaceSessionGroup = {
+  workspace: WorkspaceInfo;
+  sessions: SidebarSessionItem[];
+  status: "idle" | "loading" | "ready" | "error";
+  error?: string | null;
+};
 
 export type PlaceholderAssistantMessage = {
   id: string;
@@ -48,16 +67,19 @@ export type MessageWithParts = {
   parts: Part[];
 };
 
+export type StepGroupMode = "exploration" | "standalone";
+
 export type MessageGroup =
-  | { kind: "text"; part: Part }
-  | { kind: "steps"; id: string; parts: Part[] };
+  | { kind: "text"; part: Part; segment: "intent" | "result" }
+  | { kind: "steps"; id: string; parts: Part[]; segment: "execution"; mode: StepGroupMode };
 
 export type PromptMode = "prompt" | "shell";
 
 export type ComposerPart =
   | { type: "text"; text: string }
   | { type: "agent"; name: string }
-  | { type: "file"; path: string; label?: string };
+  | { type: "file"; path: string; label?: string }
+  | { type: "paste"; id: string; label: string; text: string; lines: number };
 
 export type ComposerAttachment = {
   id: string;
@@ -68,11 +90,27 @@ export type ComposerAttachment = {
   dataUrl: string;
 };
 
+export type SlashCommandOption = {
+  id: string;
+  name: string;
+  description?: string;
+  source?: "command" | "mcp" | "skill";
+};
+
 export type ComposerDraft = {
   mode: PromptMode;
   parts: ComposerPart[];
   attachments: ComposerAttachment[];
+  /** Editor-visible text (may include collapsed paste placeholders). */
   text: string;
+  /**
+   * Resolved text to send to the model.
+   * When a paste is collapsed into a placeholder (e.g. "[pasted text 1]"),
+   * this includes the full pasted text instead.
+   */
+  resolvedText?: string;
+  /** When set, draft is a slash command invocation */
+  command?: { name: string; arguments: string } | undefined;
 };
 
 export type ArtifactItem = {
@@ -93,59 +131,33 @@ export type View = "onboarding" | "dashboard" | "session" | "proto";
 
 export type StartupPreference = "local" | "server";
 
-export type EngineRuntime = "direct" | "openwrk";
+export type EngineRuntime = "direct" | "openwork-orchestrator";
 
 export type OnboardingStep = "welcome" | "local" | "server" | "connecting";
 
 export type DashboardTab =
-  | "home"
-  | "sessions"
   | "scheduled"
-  | "commands"
+  | "soul"
   | "skills"
   | "plugins"
   | "mcp"
+  | "identities"
+  | "config"
   | "settings";
 
-export type SettingsTab = "general" | "model" | "keybinds" | "advanced" | "remote" | "messaging" | "debug";
+export type SettingsTab = "general" | "model" | "advanced" | "debug";
 
 export type WorkspacePreset = "starter" | "automation" | "minimal";
 
+export type WorkspaceConnectionStatus = "idle" | "connecting" | "connected" | "error";
+
+export type WorkspaceConnectionState = {
+  status: WorkspaceConnectionStatus;
+  message?: string | null;
+  checkedAt?: number | null;
+};
+
 export type ResetOpenworkMode = "onboarding" | "all";
-
-export type CommandScope = "workspace" | "global" | "unknown";
-
-export type CommandRegistryScope = "global" | "session";
-
-export type CommandTriggerContext = {
-  source?: "palette" | "slash" | "keybind";
-};
-
-export type CommandRegistryItem = {
-  id: string;
-  title: string;
-  category?: string;
-  description?: string;
-  keybind?: string;
-  slash?: string;
-  scope?: CommandRegistryScope;
-  showInPalette?: boolean;
-  onSelect: (context?: CommandTriggerContext) => void;
-  onHighlight?: (context?: CommandTriggerContext) => void;
-};
-
-export type CommandDefinition = {
-  name: string;
-  description?: string;
-  template: string;
-  agent?: string;
-  model?: string;
-  subtask?: boolean;
-};
-
-export type WorkspaceCommand = CommandDefinition & {
-  scope: CommandScope;
-};
 
 export type WorkspaceOpenworkConfig = {
   version: number;
@@ -155,6 +167,10 @@ export type WorkspaceOpenworkConfig = {
     preset?: string | null;
   } | null;
   authorizedRoots: string[];
+  reload?: {
+    auto?: boolean;
+    resume?: boolean;
+  } | null;
 };
 
 export type SkillCard = {
@@ -162,6 +178,18 @@ export type SkillCard = {
   path: string;
   description?: string;
   trigger?: string;
+};
+
+export type HubSkillCard = {
+  name: string;
+  description?: string;
+  trigger?: string;
+  source: {
+    owner: string;
+    repo: string;
+    ref: string;
+    path: string;
+  };
 };
 
 export type PluginInstallStep = {
@@ -210,7 +238,7 @@ export type McpStatus =
 
 export type McpStatusMap = Record<string, McpStatus>;
 
-export type ReloadReason = "plugins" | "skills" | "mcp" | "config";
+export type ReloadReason = "plugins" | "skills" | "mcp" | "config" | "agents" | "commands";
 
 export type OpencodeConnectStatus = {
   at: number;
@@ -219,16 +247,27 @@ export type OpencodeConnectStatus = {
   reason?: string | null;
   status: "connecting" | "connected" | "error";
   error?: string | null;
+  metrics?: {
+    healthyMs?: number;
+    loadSessionsMs?: number;
+    pendingPermissionsMs?: number;
+    providersMs?: number;
+    totalMs?: number;
+  };
 };
 
 export type ReloadTrigger = {
-  type: "skill" | "plugin" | "config" | "mcp";
+  type: "skill" | "plugin" | "config" | "mcp" | "agent" | "command";
   name?: string;
   action?: "added" | "removed" | "updated";
   path?: string;
 };
 
 export type PendingPermission = ApiPermissionRequest & {
+  receivedAt: number;
+};
+
+export type PendingQuestion = QuestionRequest & {
   receivedAt: number;
 };
 
@@ -273,11 +312,6 @@ export type PluginState = {
   scope: PluginScope;
   config: OpencodeConfigFile | null;
   list: string[];
-};
-
-export type CommandState = {
-  items: WorkspaceCommand[];
-  loaded: boolean;
 };
 
 export type WorkspaceDisplay = WorkspaceInfo & {
