@@ -4,6 +4,7 @@ import { Activity, CheckCircle2, Circle, HeartPulse, RefreshCw, Sparkles } from 
 import type { OpenworkSoulHeartbeatEntry, OpenworkSoulStatus } from "../lib/openwork-server";
 import soulSetupTemplate from "../data/commands/give-me-a-soul.md?raw";
 import { formatRelativeTime, parseTemplateFrontmatter } from "../utils";
+import { currentLocale, t } from "../../i18n";
 
 type SoulViewProps = {
   workspaceName: string;
@@ -40,6 +41,7 @@ const relativeTime = (value?: string | null) => {
 
 export default function SoulView(props: SoulViewProps) {
   const [focusInput, setFocusInput] = createSignal("");
+  const translate = (key: string) => t(key, currentLocale());
   const [boundariesInput, setBoundariesInput] = createSignal("");
   const [cadence, setCadence] = createSignal(cadenceOptions[1]?.cron ?? "0 */12 * * *");
   const [heartbeatRunState, setHeartbeatRunState] = createSignal<"idle" | "running" | "success" | "warning">("idle");
@@ -276,7 +278,7 @@ export default function SoulView(props: SoulViewProps) {
             onClick={() => props.refresh({ force: true })}
           >
             <RefreshCw size={14} class={props.loading ? "animate-spin" : ""} />
-            {props.loading ? "Refreshing" : "Refresh"}
+            {props.loading ? "Refreshing" : translate("common.refresh")}
           </button>
         </div>
 
