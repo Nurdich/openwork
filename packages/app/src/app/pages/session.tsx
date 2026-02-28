@@ -88,6 +88,7 @@ import { finishPerf, perfNow, recordPerfLog } from "../lib/perf-log";
 
 import browserSetupTemplate from "../data/commands/browser-setup.md?raw";
 import soulSetupTemplate from "../data/commands/give-me-a-soul.md?raw";
+import { currentLocale, t } from "../../i18n";
 
 import MessageList from "../components/session/message-list";
 import Composer from "../components/session/composer";
@@ -288,6 +289,7 @@ const COMMAND_PALETTE_THINKING_OPTIONS = [
 ] as const;
 
 export default function SessionView(props: SessionViewProps) {
+  const translate = (key: string) => t(key, currentLocale());
   let messagesEndEl: HTMLDivElement | undefined;
   let bottomVisibilityEl: HTMLDivElement | undefined;
   let chatContainerEl: HTMLDivElement | undefined;
@@ -3356,14 +3358,14 @@ export default function SessionView(props: SessionViewProps) {
                     class="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-3"
                     onClick={openRenameModal}
                   >
-                    Rename session
+                    {translate("session.rename_title")}
                   </button>
                   <button
                     type="button"
                     class="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-3 text-red-11"
                     onClick={openDeleteSessionModal}
                   >
-                    Delete session
+                    {translate("session_sidebar.delete_session")}
                   </button>
                 </div>
               </Show>
@@ -3443,9 +3445,9 @@ export default function SessionView(props: SessionViewProps) {
                  <Zap class="text-dls-secondary" />
                </div>
               <div class="space-y-2">
-                <h3 class="text-xl font-medium">What do you want to do?</h3>
+                <h3 class="text-xl font-medium">{translate("session.empty_title")}</h3>
                 <p class="text-dls-secondary text-sm max-w-sm mx-auto">
-                  Pick a starting point or just type below.
+                  {translate("session.empty_subtitle")}
                 </p>
               </div>
               <div class="grid gap-3 sm:grid-cols-2 max-w-2xl mx-auto text-left">
@@ -3456,7 +3458,7 @@ export default function SessionView(props: SessionViewProps) {
                     void handleBrowserAutomationQuickstart();
                   }}
                 >
-                  <div class="text-sm font-semibold text-dls-text">Automate your browser</div>
+                  <div class="text-sm font-semibold text-dls-text">{translate("session.automate_browser")}</div>
                   <div class="mt-1 text-xs text-dls-secondary leading-relaxed">
                     Set up browser actions and run reliable web tasks from OpenWork.
                   </div>
@@ -3717,7 +3719,7 @@ export default function SessionView(props: SessionViewProps) {
             }}
           >
             <Zap size={18} />
-            Skills
+            {translate("nav.skills")}
           </button>
           <button
             type="button"
@@ -3760,7 +3762,7 @@ export default function SessionView(props: SessionViewProps) {
               onClick={openConfig}
             >
               <SlidersHorizontal size={18} />
-              Advanced
+              {translate("settings.advanced")}
             </button>
           </Show>
           </div>
@@ -3800,7 +3802,7 @@ export default function SessionView(props: SessionViewProps) {
                     class="h-8 px-2 rounded-md text-xs text-dls-secondary hover:text-dls-text hover:bg-dls-hover transition-colors"
                     onClick={returnToCommandRoot}
                   >
-                    Back
+                    {translate("session.back")}
                   </button>
                 </Show>
                 <Search size={14} class="text-dls-secondary shrink-0" />
@@ -3909,8 +3911,8 @@ export default function SessionView(props: SessionViewProps) {
             ? `This will permanently delete \"${selectedSessionTitle().trim()}\" and its messages.`
             : "This will permanently delete the selected session and its messages."
         }
-        confirmLabel={deleteSessionBusy() ? "Deleting..." : "Delete"}
-        cancelLabel="Cancel"
+        confirmLabel={deleteSessionBusy() ? "Deleting..." : translate("common.delete")}
+        cancelLabel={translate("common.cancel")}
         variant="danger"
         onConfirm={confirmDeleteSession}
         onCancel={closeDeleteSessionModal}
@@ -3956,16 +3958,16 @@ export default function SessionView(props: SessionViewProps) {
                   <Shield size={24} />
                 </div>
                 <div>
-                  <h3 class="text-lg font-semibold text-gray-12">Permission Required</h3>
-                  <p class="text-sm text-gray-11 mt-1">OpenCode is requesting permission to continue.</p>
+                  <h3 class="text-lg font-semibold text-gray-12">{translate("session.permission_required_title")}</h3>
+                  <p class="text-sm text-gray-11 mt-1">{translate("session.permission_description")}</p>
                 </div>
               </div>
 
               <div class="bg-gray-1/50 rounded-xl p-4 border border-gray-6 mb-6">
-                <div class="text-xs text-gray-10 uppercase tracking-wider mb-2 font-semibold">Permission</div>
+                <div class="text-xs text-gray-10 uppercase tracking-wider mb-2 font-semibold">{translate("session.permission_label_uppercase")}</div>
                 <div class="text-sm text-gray-12 font-mono">{props.activePermission?.permission}</div>
 
-                <div class="text-xs text-gray-10 uppercase tracking-wider mt-4 mb-2 font-semibold">Scope</div>
+                <div class="text-xs text-gray-10 uppercase tracking-wider mt-4 mb-2 font-semibold">{translate("session.scope_label_uppercase")}</div>
                 <div class="flex items-center gap-2 text-sm font-mono text-amber-12 bg-amber-1/30 px-2 py-1 rounded border border-amber-7/20">
                   <HardDrive size={12} />
                   {props.activePermission?.patterns.join(", ")}
@@ -3973,7 +3975,7 @@ export default function SessionView(props: SessionViewProps) {
 
                 <Show when={Object.keys(props.activePermission?.metadata ?? {}).length > 0}>
                   <details class="mt-4 rounded-lg bg-gray-1/20 p-2">
-                    <summary class="cursor-pointer text-xs text-gray-11">Details</summary>
+                    <summary class="cursor-pointer text-xs text-gray-11">{translate("session.details_label")}</summary>
                     <pre class="mt-2 whitespace-pre-wrap break-words text-xs text-gray-12">
                       {props.safeStringify(props.activePermission?.metadata)}
                     </pre>
@@ -3991,7 +3993,7 @@ export default function SessionView(props: SessionViewProps) {
                   disabled={props.permissionReplyBusy}
                 >
 
-                  Deny
+                  {translate("session.deny")}
                 </Button>
                 <div class="grid grid-cols-2 gap-2">
                   <Button
@@ -4000,7 +4002,7 @@ export default function SessionView(props: SessionViewProps) {
                     onClick={() => props.activePermission && props.respondPermission(props.activePermission.id, "once")}
                     disabled={props.permissionReplyBusy}
                   >
-                    Once
+                    {translate("session.once")}
                   </Button>
                   <Button
                     variant="primary"
@@ -4011,7 +4013,7 @@ export default function SessionView(props: SessionViewProps) {
                     }
                     disabled={props.permissionReplyBusy}
                   >
-                    Allow for session
+                    {translate("session.allow_for_session")}
                   </Button>
                 </div>
               </div>
