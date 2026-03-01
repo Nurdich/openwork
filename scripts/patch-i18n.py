@@ -390,7 +390,7 @@ def patch_zh(repo_root: Path) -> int:
     print(f"[patch-i18n] 已写入 zh.ts:")
     print(f"  自动翻译: {auto_count} 个")
     print(f"  [TODO] 待翻译: {todo_count} 个 (搜索 '[TODO]' 确认)")
-    return 0
+    return 2  # 出口码 2 = 有新 key 已写入（shell 脚本用此判断是否提交）
 
 
 if __name__ == "__main__":

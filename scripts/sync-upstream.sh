@@ -76,10 +76,17 @@ run_i18n_patch() {
   fi
 
   info "运行 i18n 补丁脚本..."
+  set +e
   python3 "$I18N_SCRIPT" "$REPO_ROOT"
+  I18N_EXIT=$?
+  set -e
 
-  # 如果 zh.ts 有变更则自动提交
-  if ! git diff --quiet -- packages/app/src/i18n/locales/zh.ts; then
+  if [[ $I18N_EXIT -eq 1 ]]; then
+    die "i18n 补丁脚本执行失败"
+  fi
+
+  # 退出码 2 = 有新 key 写入，需要提交
+  if [[ $I18N_EXIT -eq 2 ]]; then
     local upstream_ver
     upstream_ver="$(git log -1 --format="%h" "${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}" 2>/dev/null || echo "unknown")"
     git add packages/app/src/i18n/locales/zh.ts
