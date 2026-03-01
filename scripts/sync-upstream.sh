@@ -48,8 +48,15 @@ cd "$REPO_ROOT"
 
 # ── 安全检查 ──────────────────────────────────────────────────────────────────
 check_clean_working_tree() {
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    die "工作区有未提交的变更，请先 commit 或 stash 后重试"
+  # Windows autocrlf 导致 git diff 假阳性。用 git status --porcelain
+  # 只检查真实状态变化（M 、A 、D），忽略 CRLF 警告。
+  git update-index -q --refresh 2>/dev/null || true
+  local status_out
+  status_out="$(git status --porcelain 2>/dev/null | grep -E '^[MADRCU]' || true)"
+  if [[ -n "$status_out" ]]; then
+    warn "工作区有未提交的变更："
+    echo "$status_out" | head -20 | sed 's/^/  /'
+    die "请先 commit 或 stash 后重试"
   fi
 }
 
