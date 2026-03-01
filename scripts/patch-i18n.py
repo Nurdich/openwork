@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+import io as _io, sys as _sys
+# Windows GBK 控制台强制 UTF-8
+_enc = getattr(_sys.stdout, 'encoding', '') or ''
+if _enc.lower().replace('-','') not in ('utf8','utf-8'):
+    try:
+        _sys.stdout = _io.TextIOWrapper(_sys.stdout.buffer, encoding='utf-8', errors='replace')
+        _sys.stderr = _io.TextIOWrapper(_sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception: pass
 """
 patch-i18n.py — 自动同步 en.ts 新增 key 到 zh.ts
 
@@ -9,7 +19,7 @@ patch-i18n.py — 自动同步 en.ts 新增 key 到 zh.ts
     1. 解析 packages/app/src/i18n/locales/en.ts，提取所有 key+value
     2. 解析 packages/app/src/i18n/locales/zh.ts，提取所有已有 key
     3. 找出 en.ts 有但 zh.ts 没有的 key（新增 key）
-    4. 将新 key 追加到 zh.ts，按所属 section 分组，附英文原文作注释
+    4. 将新 key 追加到 zh.ts，按所属 section 分组，附英文原文作注针
     5. 输出统计：新增 N 个 key，[TODO] 标记待人工翻译
 
 不翻译的专业术语（保持英文）:
@@ -19,8 +29,6 @@ patch-i18n.py — 自动同步 en.ts 新增 key 到 zh.ts
 [TODO] 标记: 所有自动补丁的 key 值都保留英文原文并添加 [TODO] 前缀，
 提示维护者人工确认翻译。
 """
-
-from __future__ import annotations
 
 import re
 import sys
