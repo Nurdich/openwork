@@ -340,8 +340,12 @@ def patch_zh(repo_root: Path) -> int:
         print(f"[error] 找不到 zh.ts: {zh_path}", file=sys.stderr)
         return 1
 
-    en_content = en_path.read_text(encoding="utf-8")
-    zh_content = zh_path.read_text(encoding="utf-8")
+    # newline='' 保留原始行尾（Windows CRLF 不被归一化）
+    en_content = en_path.read_text(encoding="utf-8", errors="replace")
+    zh_raw = zh_path.read_bytes()
+    # 检测原始行尾格式
+    zh_crlf = b"\r\n" in zh_raw
+    zh_content = zh_raw.decode("utf-8", errors="replace")
 
     en_entries, _ = parse_ts_locale(en_content)
     zh_entries, zh_lines = parse_ts_locale(zh_content)
@@ -374,7 +378,11 @@ def patch_zh(repo_root: Path) -> int:
 
     patch_lines = build_patch_lines(missing)
     new_lines = zh_lines[:insert_before] + patch_lines + zh_lines[insert_before:]
-    zh_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    new_content = "\n".join(new_lines) + "\n"
+    # 恢复原始行尾格式，避免 git 把 CRLF 当作内容变更
+    if zh_crlf:
+        new_content = new_content.replace("\n", "\r\n")
+    zh_path.write_bytes(new_content.encode("utf-8"))
 
     todo_count = sum(1 for _, v, _ in missing if translate_value(v).startswith("[TODO]"))
     auto_count = len(missing) - todo_count
