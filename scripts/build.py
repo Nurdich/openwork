@@ -74,7 +74,8 @@ def die(msg: str) -> None:
     sys.exit(1)
 
 # ── Shell 执行 ────────────────────────────────────────────────────────────────
-def run(cmd: list[str], cwd: Path = REPO_ROOT, strip_ci: bool = False) -> None:
+def run(cmd: list[str], cwd: Path = REPO_ROOT, strip_ci: bool = False,
+        extra_env: dict[str, str] | None = None) -> None:
     """运行命令，实时输出。Windows 用 shell=True 支持 .cmd 可执行文件。"""
     info(f"$ {' '.join(cmd)}")
     env = {**os.environ}
@@ -82,6 +83,8 @@ def run(cmd: list[str], cwd: Path = REPO_ROOT, strip_ci: bool = False) -> None:
         # tauri build 不兼容 CI=1，会把它解析为 --ci 1 而报错
         env.pop("CI", None)
         env.pop("CONTINUOUS_INTEGRATION", None)
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(
         cmd, cwd=cwd,
         env=env,
@@ -167,18 +170,20 @@ def do_install() -> None:
     run(["pnpm", "install", "--frozen-lockfile"], cwd=REPO_ROOT)
     ok("依赖安装完成")
 
-def do_tauri_build(debug: bool) -> None:
+def do_tauri_build(debug: bool, force_sidecar: bool = False) -> None:
     cmd = ["pnpm", "exec", "tauri", "build"]
     if debug:
         cmd.append("--debug")
-    # 在 Windows 上显式指定 nsis，确保生成安装包
+    # Windows 显式指定 nsis，确保生成安装包
     cmd += ["--bundles", "nsis"]
-    # 本地构建跳过代码签名（没有 TAURI_SIGNING_PRIVATE_KEY 不报错）
+    # 本地构建跳过代码签名
     cmd.append("--no-sign")
-    # tauri.conf.json beforeBuildCommand 已自动执行:
-    #   prepare-sidecar（下载/验证 sidecar binary）
-    #   vite build（编译前端）
-    run(cmd, cwd=DESKTOP_DIR, strip_ci=True)
+    # 强制重建本地 sidecar（openwork-server/orchestrator 是 bun build，有缓存则跳过）
+    extra_env: dict[str, str] = {}
+    if force_sidecar:
+        extra_env["OPENWORK_SIDECAR_FORCE_BUILD"] = "1"
+        info("强制重建本地 sidecar（OPENWORK_SIDECAR_FORCE_BUILD=1）")
+    run(cmd, cwd=DESKTOP_DIR, strip_ci=True, extra_env=extra_env)
 
 # ── 产物报告 ──────────────────────────────────────────────────────────────────
 def report_artifacts(debug: bool) -> None:
@@ -214,9 +219,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--skip-update", action="store_true", help="跳过 sidecar 版本更新")
-    parser.add_argument("--update-only", action="store_true", help="只更新版本，不编译")
-    parser.add_argument("--debug",       action="store_true", help="Debug 模式（跳过代码签名，速度快）")
+    parser.add_argument("--skip-update",   action="store_true", help="跳过 sidecar 版本更新")
+    parser.add_argument("--update-only",   action="store_true", help="只更新版本，不编译")
+    parser.add_argument("--force-sidecar", action="store_true", help="强制重建本地 sidecar（openwork-server/orchestrator）")
+    parser.add_argument("--debug",         action="store_true", help="Debug 模式（跳过代码签名，速度快）")
     args = parser.parse_args()
 
     t0 = time.time()
@@ -235,8 +241,8 @@ def main() -> None:
     if not args.skip_update:
         n += 1
         step(n, total_steps, "更新三方组件版本")
-        changes = do_update_versions()
-        if changes and not args.update_only:
+        version_changes = do_update_versions()
+        if version_changes and not args.update_only:
             info("版本已更新，重新安装依赖以同步 lockfile...")
 
     if args.update_only:
@@ -253,7 +259,10 @@ def main() -> None:
     n += 1
     step(n, total_steps, f"编译桌面应用 (tauri build --{mode})")
     info("tauri 将自动执行: prepare-sidecar → vite build → Rust 编译 → 打包安装程序")
-    do_tauri_build(args.debug)
+    # 有版本变更时自动强制重建，或用户显式传了 --force-sidecar
+    # 有版本变更时自动强制重建，或用户显式传了 --force-sidecar
+    force = args.force_sidecar or bool(version_changes)
+    do_tauri_build(args.debug, force_sidecar=force)
 
     # 4. 报告
     report_artifacts(args.debug)
