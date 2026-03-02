@@ -11,35 +11,45 @@ if _enc.lower().replace('-', '') not in ('utf8', 'utf-8'):
         pass
 
 """
-build.py — 编译 OpenWork 桌面应用（Windows）
+build.py — 更新三方组件 + 编译 OpenWork 桌面应用（Windows）
 
 用法:
-    python scripts/build.py              # 完整编译（install + tauri build）
-    python scripts/build.py --install    # 只安装依赖
-    python scripts/build.py --ui         # 只编译前端（vite build）
-    python scripts/build.py --tauri      # 只编译 tauri（跳过 install）
-    python scripts/build.py --debug      # Debug 模式（速度更快，包更大）
+    python scripts/build.py                   # 完整流程
+    python scripts/build.py --skip-update     # 跳过 sidecar 版本更新
+    python scripts/build.py --update-only     # 只更新版本，不编译
+    python scripts/build.py --debug           # Debug 模式（快，包大）
+
+完整流程:
+    1. 查询 GitHub 获取 opencode 最新版本
+    2. 更新 packages/desktop/package.json 的 opencodeVersion
+    3. pnpm install（锁定依赖）
+    4. tauri build（含 beforeBuildCommand: prepare-sidecar + vite build）
+    5. 汇报安装包路径
 
 输出产物:
     packages/desktop/src-tauri/target/release/bundle/
-        nsis/   → OpenWork_x.x.x_x64-setup.exe  (安装包)
-        msi/    → OpenWork_x.x.x_x64_en-US.msi  (MSI)
+        nsis/  OpenWork_x.x.x_x64-setup.exe
+        msi/   OpenWork_x.x.x_x64_en-US.msi
 """
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 
-# ── 路径 ───────────────────────────────────────────────────────────────────────
-REPO_ROOT    = Path(__file__).resolve().parent.parent
-DESKTOP_DIR  = REPO_ROOT / "packages" / "desktop"
-APP_DIR      = REPO_ROOT / "packages" / "app"
-BUNDLE_DIR   = DESKTOP_DIR / "src-tauri" / "target" / "release" / "bundle"
-BUNDLE_DEBUG = DESKTOP_DIR / "src-tauri" / "target" / "debug" / "bundle"
+IS_WINDOWS = sys.platform == "win32"
+REPO_ROOT   = Path(__file__).resolve().parent.parent
+DESKTOP_DIR = REPO_ROOT / "packages" / "desktop"
+APP_DIR     = REPO_ROOT / "packages" / "app"
+DESKTOP_PKG = DESKTOP_DIR / "package.json"
+TAURI_CONF  = DESKTOP_DIR / "src-tauri" / "tauri.conf.json"
+SIDECARS    = DESKTOP_DIR / "src-tauri" / "sidecars"
 
 # ── ANSI 颜色 ─────────────────────────────────────────────────────────────────
 try:
@@ -54,24 +64,28 @@ except Exception:
 def _c(code: str, text: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _COLOR else text
 
-def info(msg: str)  -> None: print(_c("34",  f"[build] {msg}"))
-def ok(msg: str)    -> None: print(_c("32",  f"[ok]    {msg}"))
-def warn(msg: str)  -> None: print(_c("33",  f"[warn]  {msg}"))
-def step(msg: str)  -> None: print(_c("36",  f"\n{'─'*50}\n  {msg}\n{'─'*50}"))
-def die(msg: str)   -> None:
-    print(_c("31", f"[error] {msg}"), file=sys.stderr)
+def info(msg: str)  -> None: print(_c("34", f"[build] {msg}"))
+def ok(msg: str)    -> None: print(_c("32", f"[ok]    {msg}"))
+def warn(msg: str)  -> None: print(_c("33", f"[warn]  {msg}"))
+def step(n: int, total: int, msg: str) -> None:
+    print(_c("36", f"\n{'─'*52}\n  [{n}/{total}] {msg}\n{'─'*52}"))
+def die(msg: str) -> None:
+    print(_c("31", f"\n[error] {msg}"), file=sys.stderr)
     sys.exit(1)
 
-# ── 工具 ───────────────────────────────────────────────────────────────────────
-IS_WINDOWS = sys.platform == "win32"
-
-def run(cmd: list[str], cwd: Path = REPO_ROOT, env: dict | None = None) -> None:
-    """运行命令，实时输出，失败则 die。Windows 上用 shell=True 支持 .cmd 脚本。"""
+# ── Shell 执行 ────────────────────────────────────────────────────────────────
+def run(cmd: list[str], cwd: Path = REPO_ROOT, strip_ci: bool = False) -> None:
+    """运行命令，实时输出。Windows 用 shell=True 支持 .cmd 可执行文件。"""
     info(f"$ {' '.join(cmd)}")
-    merged_env = {**os.environ, **(env or {})}
+    env = {**os.environ}
+    if strip_ci:
+        # tauri build 不兼容 CI=1，会把它解析为 --ci 1 而报错
+        env.pop("CI", None)
+        env.pop("CONTINUOUS_INTEGRATION", None)
     result = subprocess.run(
-        cmd, cwd=cwd, env=merged_env,
-        shell=IS_WINDOWS,  # Windows: pnpm/cargo 等都是 .cmd，需要 shell
+        cmd, cwd=cwd,
+        env=env,
+        shell=IS_WINDOWS,
     )
     if result.returncode != 0:
         die(f"命令失败（退出码 {result.returncode}）: {' '.join(cmd)}")
@@ -80,95 +94,174 @@ def elapsed(start: float) -> str:
     s = int(time.time() - start)
     return f"{s // 60}m{s % 60}s"
 
-def get_version() -> str:
-    conf = DESKTOP_DIR / "src-tauri" / "tauri.conf.json"
-    return json.loads(conf.read_text(encoding="utf-8")).get("version", "unknown")
+# ── JSON 读写 ─────────────────────────────────────────────────────────────────
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
 
-def find_artifacts(debug: bool) -> list[Path]:
-    base = BUNDLE_DEBUG if debug else BUNDLE_DIR
-    if not base.exists():
-        return []
-    exts = (".exe", ".msi", ".dmg", ".deb", ".rpm", ".AppImage")
-    found = []
-    for p in base.rglob("*"):
-        if p.is_file() and p.suffix in exts and "fragment" not in p.name:
-            found.append(p)
-    return sorted(found)
+def write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-# ── 步骤 ───────────────────────────────────────────────────────────────────────
+# ── GitHub API ────────────────────────────────────────────────────────────────
+def github_latest_tag(repo: str) -> str | None:
+    """获取 GitHub repo 的最新 release tag，失败返回 None。"""
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "openwork-build-script",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            tag = data.get("tag_name", "")
+            return tag.lstrip("v") if tag else None
+    except Exception as e:
+        warn(f"GitHub API 请求失败 ({repo}): {e}")
+        return None
+
+# ── 版本更新 ──────────────────────────────────────────────────────────────────
+SIDECAR_SOURCES = {
+    "opencode": {
+        "repo":    "anomalyco/opencode",
+        "pkg_key": "opencodeVersion",
+    },
+    "opencode-router": {
+        "repo":    "different-ai/openwork",
+        "pkg_key": "opencodeRouterVersion",
+    },
+}
+
+def do_update_versions() -> dict[str, tuple[str, str]]:
+    """
+    查询每个 sidecar 的最新版本，更新 desktop/package.json。
+    返回 {name: (old, new)} 的变更字典。
+    """
+    pkg = read_json(DESKTOP_PKG)
+    changes: dict[str, tuple[str, str]] = {}
+
+    for name, cfg in SIDECAR_SOURCES.items():
+        key = cfg["pkg_key"]
+        old = str(pkg.get(key, "")).lstrip("v")
+        info(f"查询 {name} 最新版本 ({cfg['repo']})...")
+        new = github_latest_tag(cfg["repo"])
+        if not new:
+            warn(f"  无法获取 {name} 最新版，保持当前版本 {old}")
+            continue
+        if old == new:
+            ok(f"  {name} 已是最新 v{new}")
+        else:
+            info(f"  {name}: {old} → {new}")
+            pkg[key] = new
+            changes[name] = (old, new)
+
+    if changes:
+        write_json(DESKTOP_PKG, pkg)
+        ok(f"desktop/package.json 已更新：{', '.join(f'{n} {o}→{v}' for n,(o,v) in changes.items())}")
+    else:
+        ok("所有 sidecar 已是最新版本")
+
+    return changes
+
+# ── 编译步骤 ──────────────────────────────────────────────────────────────────
 def do_install() -> None:
-    step("安装依赖 (pnpm install)")
     run(["pnpm", "install", "--frozen-lockfile"], cwd=REPO_ROOT)
     ok("依赖安装完成")
 
-def do_ui_build() -> None:
-    step("编译前端 (vite build)")
-    run(["pnpm", "--filter", "@different-ai/openwork-ui", "build"], cwd=REPO_ROOT)
-    ok("前端编译完成")
-
 def do_tauri_build(debug: bool) -> None:
-    mode = "debug" if debug else "release"
-    step(f"编译 Tauri ({mode})")
     cmd = ["pnpm", "exec", "tauri", "build"]
     if debug:
         cmd.append("--debug")
-    # beforeBuildCommand 在 tauri.conf.json 里已配置：
-    #   pnpm prepare:sidecar + pnpm build:ui
-    # 所以直接跑 tauri build 即可
-    run(cmd, cwd=DESKTOP_DIR)
-    ok(f"Tauri 编译完成（{mode}）")
+    # 在 Windows 上显式指定 nsis，确保生成安装包
+    cmd += ["--bundles", "nsis"]
+    # 本地构建跳过代码签名（没有 TAURI_SIGNING_PRIVATE_KEY 不报错）
+    cmd.append("--no-sign")
+    # tauri.conf.json beforeBuildCommand 已自动执行:
+    #   prepare-sidecar（下载/验证 sidecar binary）
+    #   vite build（编译前端）
+    run(cmd, cwd=DESKTOP_DIR, strip_ci=True)
+
+# ── 产物报告 ──────────────────────────────────────────────────────────────────
+def report_artifacts(debug: bool) -> None:
+    bundle_base = DESKTOP_DIR / "src-tauri" / "target"
+    bundle = bundle_base / ("debug" if debug else "release") / "bundle"
+
+    if not bundle.exists():
+        warn(f"未找到 bundle 目录: {bundle}")
+        warn("tauri build 可能失败或 bundle.active 未开启")
+        return
+
+    exts = (".exe", ".msi", ".dmg", ".deb", ".rpm", ".AppImage")
+    artifacts = sorted(
+        p for p in bundle.rglob("*")
+        if p.is_file() and p.suffix in exts and "fragment" not in p.name
+    )
+
+    if not artifacts:
+        warn("bundle 目录存在但未找到安装包文件")
+        return
+
+    print()
+    ok("构建产物:")
+    for a in artifacts:
+        mb = a.stat().st_size / 1024 / 1024
+        rel = a.relative_to(REPO_ROOT)
+        print(f"  {_c('32','✓')}  {rel}  ({mb:.1f} MB)")
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="编译 OpenWork 桌面应用",
+        description="更新三方组件并编译 OpenWork 桌面应用",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--install", action="store_true", help="只安装依赖")
-    parser.add_argument("--ui",      action="store_true", help="只编译前端")
-    parser.add_argument("--tauri",   action="store_true", help="只编译 tauri（跳过 install）")
-    parser.add_argument("--debug",   action="store_true", help="Debug 模式")
+    parser.add_argument("--skip-update", action="store_true", help="跳过 sidecar 版本更新")
+    parser.add_argument("--update-only", action="store_true", help="只更新版本，不编译")
+    parser.add_argument("--debug",       action="store_true", help="Debug 模式（跳过代码签名，速度快）")
     args = parser.parse_args()
 
     t0 = time.time()
-    version = get_version()
-    info(f"OpenWork v{version}  |  模式: {'debug' if args.debug else 'release'}")
+    version = read_json(TAURI_CONF).get("version", "unknown")
+    mode = "debug" if args.debug else "release"
+    info(f"OpenWork v{version}  |  目标: {mode}")
 
-    # 单步模式
-    if args.install:
-        do_install()
-        ok(f"完成 ({elapsed(t0)})")
-        return
+    total_steps = sum([
+        not args.skip_update,          # step: update versions
+        not args.update_only,          # step: install
+        not args.update_only,          # step: tauri build
+    ])
+    n = 0
 
-    if args.ui:
-        do_ui_build()
-        ok(f"完成 ({elapsed(t0)})")
-        return
+    # 1. 更新 sidecar 版本
+    if not args.skip_update:
+        n += 1
+        step(n, total_steps, "更新三方组件版本")
+        changes = do_update_versions()
+        if changes and not args.update_only:
+            info("版本已更新，重新安装依赖以同步 lockfile...")
 
-    if args.tauri:
-        do_tauri_build(args.debug)
-    else:
-        # 完整流程
-        do_install()
-        do_tauri_build(args.debug)  # beforeBuildCommand 里已含 UI 编译
-
-    # 汇报产物
-    artifacts = find_artifacts(args.debug)
-    if artifacts:
+    if args.update_only:
         print()
-        ok("构建产物:")
-        for a in artifacts:
-            size_mb = a.stat().st_size / 1024 / 1024
-            rel = a.relative_to(REPO_ROOT)
-            print(f"  {_c('32','✓')}  {rel}  ({size_mb:.1f} MB)")
-    else:
-        warn("未找到构建产物，请检查 bundle 配置")
+        ok(f"完成（只更新版本，未编译）  耗时 {elapsed(t0)}")
+        return
+
+    # 2. 安装依赖
+    n += 1
+    step(n, total_steps, "安装依赖 (pnpm install)")
+    do_install()
+
+    # 3. Tauri build
+    n += 1
+    step(n, total_steps, f"编译桌面应用 (tauri build --{mode})")
+    info("tauri 将自动执行: prepare-sidecar → vite build → Rust 编译 → 打包安装程序")
+    do_tauri_build(args.debug)
+
+    # 4. 报告
+    report_artifacts(args.debug)
 
     print()
-    ok(f"{'='*44}")
-    ok(f"  编译完成！版本 v{version}  耗时 {elapsed(t0)}")
-    ok(f"{'='*44}")
+    ok(f"{'='*50}")
+    ok(f"  编译完成！  v{version}  耗时 {elapsed(t0)}")
+    ok(f"{'='*50}")
 
 
 if __name__ == "__main__":
