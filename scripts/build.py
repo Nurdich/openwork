@@ -123,20 +123,41 @@ def github_latest_tag(repo: str) -> str | None:
         return None
 
 # ── 版本更新 ──────────────────────────────────────────────────────────────────
+# opencode 是唯一一个从 GitHub 独立追踪的第三方组件。
+# opencode-router / openwork-server / orchestrator 是内部 workspace 包，版本由
+# `pnpm bump:*` 统一管理，不应独立上抠 GitHub 最新 release。
 SIDECAR_SOURCES = {
     "opencode": {
         "repo":    "anomalyco/opencode",
         "pkg_key": "opencodeVersion",
     },
-    "opencode-router": {
-        "repo":    "different-ai/openwork",
-        "pkg_key": "opencodeRouterVersion",
-    },
 }
+
+# workspace 内部包：desktop/package.json 的 opencodeRouterVersion 必须和
+# packages/opencode-router/package.json 的 version 保持一致。
+OPENCODE_ROUTER_PKG = REPO_ROOT / "packages" / "opencode-router" / "package.json"
+
+
+def _sync_opencode_router_version(desktop_pkg: dict) -> bool:
+    """
+    如果 desktop/package.json 的 opencodeRouterVersion 与 workspace 内部包不一致，
+    自动将 desktop/package.json 的字段回改为 workspace 内部包的实际版本。
+    返回 True 表示有修正。
+    """
+    if not OPENCODE_ROUTER_PKG.exists():
+        return False
+    router_ver = read_json(OPENCODE_ROUTER_PKG).get("version", "").lstrip("v")
+    desktop_ver = str(desktop_pkg.get("opencodeRouterVersion", "")).lstrip("v")
+    if router_ver and desktop_ver != router_ver:
+        warn(f"  opencodeRouterVersion 不一致: desktop={desktop_ver}, workspace={router_ver} → 修正为 {router_ver}")
+        desktop_pkg["opencodeRouterVersion"] = router_ver
+        return True
+    return False
+
 
 def do_update_versions() -> dict[str, tuple[str, str]]:
     """
-    查询每个 sidecar 的最新版本，更新 desktop/package.json。
+    查询每个第三方 sidecar 的最新版本，更新 desktop/package.json。
     返回 {name: (old, new)} 的变更字典。
     """
     pkg = read_json(DESKTOP_PKG)
@@ -157,9 +178,13 @@ def do_update_versions() -> dict[str, tuple[str, str]]:
             pkg[key] = new
             changes[name] = (old, new)
 
+    # 检查并修復 opencodeRouterVersion 与 workspace 内部包的一致性
+    if _sync_opencode_router_version(pkg):
+        changes.setdefault("opencode-router-sync", ("", ""))
+
     if changes:
         write_json(DESKTOP_PKG, pkg)
-        ok(f"desktop/package.json 已更新：{', '.join(f'{n} {o}→{v}' for n,(o,v) in changes.items())}")
+        ok(f"desktop/package.json 已更新：{', '.join(f'{n} {o}→{v}' for n,(o,v) in changes.items() if o and v)}")
     else:
         ok("所有 sidecar 已是最新版本")
 
