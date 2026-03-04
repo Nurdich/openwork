@@ -150,10 +150,10 @@ export function OpenCodeRouterSettings(_props: {
     <div class="bg-gray-2/30 border border-gray-6/50 rounded-2xl p-5 space-y-2">
       <div class="flex items-center gap-2">
         <MessageCircle size={16} class="text-gray-11" />
-        <div class="text-sm font-medium text-gray-12">Messaging</div>
+        <div class="text-sm font-medium text-gray-12">{t("nav.messaging", currentLocale())}</div>
       </div>
       <div class="text-xs text-gray-10">
-        Manage Telegram/Slack identities and bindings in the <span class="font-medium text-gray-12">Identities</span> tab.
+        {t("settings.messaging_routing_hint", currentLocale())}
       </div>
     </div>
   );
@@ -236,10 +236,12 @@ export default function SettingsView(props: SettingsViewProps) {
     const state = updateState();
     const version = updateVersion();
     if (state === "available") {
-      return `Update available${version ? ` · v${version}` : ""}`;
+      const base = translate("settings.update_state_available").replace(/[:\uff1a]\s*v\{version\}/, "").trim();
+      return version ? `${base} \u00b7 v${version}` : base;
     }
     if (state === "ready") {
-      return `Ready to install${version ? ` · v${version}` : ""}`;
+      const base2 = translate("settings.update_state_ready").replace(/[:\uff1a]\s*v\{version\}/, "").trim();
+      return version ? `${base2} \u00b7 v${version}` : base2;
     }
     if (state === "downloading") {
       const downloaded = updateDownloadedBytes() ?? 0;
@@ -248,12 +250,12 @@ export default function SettingsView(props: SettingsViewProps) {
       return `Downloading ${formatBytes(downloaded)}`;
     }
     if (state === "checking") {
-      return "Checking for updates";
+      return translate("settings.update_state_checking");
     }
     if (state === "error") {
-      return "Update check failed";
+      return translate("settings.update_state_error");
     }
-    return "Up to date";
+    return translate("settings.update_state_uptodate");
   });
 
   const updateToolbarTitle = createMemo(() => {
@@ -274,10 +276,10 @@ export default function SettingsView(props: SettingsViewProps) {
 
   const updateToolbarActionLabel = createMemo(() => {
     const state = updateState();
-    if (state === "available") return "Download";
-    if (state === "ready") return "Install";
-    if (state === "error") return "Retry";
-    if (state === "idle") return "Check";
+    if (state === "available") return translate("settings.update_download_btn");
+    if (state === "ready") return translate("settings.update_install_btn");
+    if (state === "error") return translate("dashboard.retry");
+    if (state === "idle") return translate("settings.update_check_btn");
     return null;
   });
 
@@ -305,13 +307,13 @@ export default function SettingsView(props: SettingsViewProps) {
   const notionStatusLabel = () => {
     switch (props.notionStatus) {
       case "connected":
-        return "Connected";
+        return translate("settings.notion_connected");
       case "connecting":
-        return "Reload required";
+        return translate("settings.reload_required");
       case "error":
-        return "Connection failed";
+        return translate("settings.connection_failed");
       default:
-        return "Not connected";
+        return translate("settings.notion_not_connected");
     }
   };
 
@@ -352,9 +354,9 @@ export default function SettingsView(props: SettingsViewProps) {
     return Array.from(new Set(names));
   });
   const providerStatusLabel = createMemo(() => {
-    if (!providerAvailableCount()) return "Unavailable";
-    if (!providerConnectedCount()) return "Not connected";
-    return `${providerConnectedCount()} connected`;
+    if (!providerAvailableCount()) return translate("settings.status.unavailable");
+    if (!providerConnectedCount()) return translate("settings.providers_status_disconnected");
+    return translate("settings.providers_status_connected").replace("{count}", String(providerConnectedCount()));
   });
   const providerStatusStyle = createMemo(() => {
     if (!providerAvailableCount()) return "bg-gray-4/60 text-gray-11 border-gray-7/50";
@@ -421,11 +423,11 @@ export default function SettingsView(props: SettingsViewProps) {
   const openworkStatusLabel = createMemo(() => {
     switch (props.openworkServerStatus) {
       case "connected":
-        return "Connected";
+        return translate("settings.remote_status_connected");
       case "limited":
-        return "Limited";
+        return translate("settings.remote_status_limited");
       default:
-        return "Not connected";
+        return translate("settings.remote_status_disconnected");
     }
   });
 
@@ -441,8 +443,8 @@ export default function SettingsView(props: SettingsViewProps) {
   });
 
   const engineStatusLabel = createMemo(() => {
-    if (!isTauriRuntime()) return "Unavailable";
-    return props.engineInfo?.running ? "Running" : "Offline";
+    if (!isTauriRuntime()) return translate("settings.status.unavailable");
+    return props.engineInfo?.running ? translate("settings.status.running") : translate("settings.status.offline");
   });
 
   const engineStatusStyle = createMemo(() => {
@@ -1095,8 +1097,8 @@ export default function SettingsView(props: SettingsViewProps) {
 
               <div class="flex items-center justify-between bg-gray-1 p-3 rounded-xl border border-gray-6 gap-3">
                 <div class="min-w-0">
-                  <div class="text-sm text-gray-12">Auto context compaction</div>
-                  <div class="text-xs text-gray-7">Automatically compact after a run completes.</div>
+                  <div class="text-sm text-gray-12">{translate("settings.auto_compact_context_label")}</div>
+                  <div class="text-xs text-gray-7">{translate("settings.auto_compact_context_hint")}</div>
                 </div>
                 <Button
                   variant="outline"
@@ -1104,7 +1106,7 @@ export default function SettingsView(props: SettingsViewProps) {
                   onClick={props.toggleAutoCompactContext}
                   disabled={props.busy}
                 >
-                  {props.autoCompactContext ? "On" : "Off"}
+                  {props.autoCompactContext ? translate("settings.on") : translate("settings.off")}
                 </Button>
               </div>
 
@@ -1601,7 +1603,7 @@ export default function SettingsView(props: SettingsViewProps) {
                       onClick={props.stopHost}
                       disabled={props.busy}
                     >
-                      Switch
+                      {translate("settings.switch_mode")}
                     </Button>
                   </div>
 
@@ -1628,8 +1630,7 @@ export default function SettingsView(props: SettingsViewProps) {
 
                     <Show when={!isLocalPreference()}>
                       <div class="text-[11px] text-amber-11 bg-amber-3/40 border border-amber-7/40 rounded-lg px-3 py-2">
-                        Startup preference is currently remote. Engine settings are saved now and apply the next time you
-                        run locally.
+                        {translate("settings.startup_engine_remote_note")}
                       </div>
                     </Show>
 
@@ -1715,7 +1716,7 @@ export default function SettingsView(props: SettingsViewProps) {
                             onClick={() => props.setEngineRuntime("openwork-orchestrator")}
                             disabled={props.busy}
                           >
-                            OpenWork Orchestrator
+                            {translate("settings.engine_orchestrator")}
                           </Button>
                         </div>
                         <div class="text-[11px] text-gray-7">{translate("settings.engine_runtime_hint")}</div>
@@ -1775,8 +1776,8 @@ export default function SettingsView(props: SettingsViewProps) {
 
                   <div class="bg-gray-1 p-4 rounded-xl border border-gray-6 space-y-3">
                     <div>
-                      <div class="text-sm font-medium text-gray-12">Service restarts</div>
-                      <div class="text-xs text-gray-10">Restart specific host services without leaving this screen.</div>
+                      <div class="text-sm font-medium text-gray-12">{translate("settings.devtools_service_restarts")}</div>
+                      <div class="text-xs text-gray-10">{translate("settings.devtools_service_restarts_hint")}</div>
                     </div>
                     <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                       <Button
@@ -1786,7 +1787,7 @@ export default function SettingsView(props: SettingsViewProps) {
                         class="text-xs px-3 py-1.5 justify-center"
                       >
                         <RefreshCcw class={`w-3.5 h-3.5 mr-1.5 ${openworkRestartBusy() ? "animate-spin" : ""}`} />
-                        {openworkRestartBusy() ? "Restarting..." : "Restart orchestrator"}
+                        {openworkRestartBusy() ? translate("settings.connection_restarting") : translate("settings.devtools_restart_orchestrator")}
                       </Button>
                       <Button
                         variant="secondary"
@@ -1795,7 +1796,7 @@ export default function SettingsView(props: SettingsViewProps) {
                         class="text-xs px-3 py-1.5 justify-center"
                       >
                         <RefreshCcw class={`w-3.5 h-3.5 mr-1.5 ${opencodeRestarting() ? "animate-spin" : ""}`} />
-                        {opencodeRestarting() ? "Restarting..." : "Restart OpenCode"}
+                        {opencodeRestarting() ? translate("settings.connection_restarting") : translate("settings.devtools_restart_opencode")}
                       </Button>
                       <Button
                         variant="secondary"
@@ -1804,7 +1805,7 @@ export default function SettingsView(props: SettingsViewProps) {
                         class="text-xs px-3 py-1.5 justify-center"
                       >
                         <RefreshCcw class={`w-3.5 h-3.5 mr-1.5 ${openworkServerRestarting() ? "animate-spin" : ""}`} />
-                        {openworkServerRestarting() ? "Restarting..." : "Restart OpenWork server"}
+                        {openworkServerRestarting() ? translate("settings.connection_restarting") : translate("settings.devtools_restart_openwork_server")}
                       </Button>
                       <Button
                         variant="secondary"
@@ -1813,7 +1814,7 @@ export default function SettingsView(props: SettingsViewProps) {
                         class="text-xs px-3 py-1.5 justify-center"
                       >
                         <RefreshCcw class={`w-3.5 h-3.5 mr-1.5 ${opencodeRouterRestarting() ? "animate-spin" : ""}`} />
-                        {opencodeRouterRestarting() ? "Restarting..." : "Restart OpenCodeRouter"}
+                        {opencodeRouterRestarting() ? translate("settings.connection_restarting") : translate("settings.devtools_restart_opencode_router")}
                       </Button>
                     </div>
                     <Show when={openworkRestartStatus()}>
@@ -2041,7 +2042,7 @@ export default function SettingsView(props: SettingsViewProps) {
                           class="text-xs px-3 py-1.5"
                         >
                           <RefreshCcw class={`w-3.5 h-3.5 mr-1.5 ${opencodeRouterRestarting() ? "animate-spin" : ""}`} />
-                          {opencodeRouterRestarting() ? "Restarting..." : "Restart"}
+                          {opencodeRouterRestarting() ? translate("settings.connection_restarting") : translate("settings.devtools_restart_opencode_router")}
                         </Button>
                         <Show when={props.opencodeRouterInfo?.running}>
                           <Button
@@ -2050,7 +2051,7 @@ export default function SettingsView(props: SettingsViewProps) {
                             disabled={opencodeRouterRestarting()}
                             class="text-xs px-3 py-1.5"
                           >
-                            Stop
+                            {translate("settings.devtools_stop_opencode_router")}
                           </Button>
                         </Show>
                       </div>

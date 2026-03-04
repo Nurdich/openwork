@@ -1538,7 +1538,7 @@ export default function DashboardView(props: DashboardViewProps) {
                 onClick={() => props.setTab("config")}
               >
                 <SlidersHorizontal size={18} />
-                Advanced
+                {tr("dashboard.advanced")}
               </button>
             </Show>
           </div>
