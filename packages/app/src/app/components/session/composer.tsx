@@ -205,6 +205,7 @@ const compressImageFile = async (file: File): Promise<File> => {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const normalizeText = (value: string) => value.replace(/\u00a0/g, " ");
+const readEditorText = (editor: HTMLElement | undefined) => normalizeText(editor?.textContent ?? "");
 const RECENT_EMIT_TTL_MS = 30_000;
 const MAX_RECENT_EMITS = 400;
 const DRAFT_FLUSH_DEBOUNCE_MS = 140;
@@ -629,7 +630,7 @@ export default function Composer(props: ComposerProps) {
   createEffect(() => {
     if (!editorRef) return;
     const value = props.prompt;
-    const current = normalizeText(editorRef.innerText);
+    const current = readEditorText(editorRef);
 
     // Robust Echo Cancellation:
     // If the incoming value matches ANY recently emitted text, it's a stale echo or confirmation.
@@ -753,7 +754,7 @@ export default function Composer(props: ComposerProps) {
 
   const handleEditorInput = () => {
     const startedAt = perfNow();
-    const currentText = normalizeText(editorRef?.innerText ?? "");
+    const currentText = readEditorText(editorRef);
     const mentionStartedAt = perfNow();
     if (mentionOpen() || currentText.includes("@")) {
       updateMentionQuery(currentText);
@@ -779,7 +780,7 @@ export default function Composer(props: ComposerProps) {
         mentionMs,
         slashMs,
         sincePrevInputMs,
-        chars: editorRef?.innerText.length ?? 0,
+        chars: editorRef?.textContent?.length ?? 0,
         mentionOpen: mentionOpen(),
         slashOpen: slashOpen(),
       });
@@ -841,7 +842,7 @@ export default function Composer(props: ComposerProps) {
       setMentionQuery("");
       return;
     }
-    const text = currentText ?? normalizeText(editorRef.innerText);
+    const text = currentText ?? readEditorText(editorRef);
     const before = text.slice(0, offsets.start);
     const match = before.match(/@(\S*)$/);
     if (!match) {
@@ -860,7 +861,7 @@ export default function Composer(props: ComposerProps) {
       setSlashQuery("");
       return;
     }
-    const text = currentText ?? normalizeText(editorRef.innerText);
+    const text = currentText ?? readEditorText(editorRef);
     // Only trigger when the entire input matches /command (no spaces, starts with /)
     const slashMatch = text.match(/^\/(\S*)$/);
     if (!slashMatch) {
@@ -981,7 +982,7 @@ export default function Composer(props: ComposerProps) {
     if (!editorRef) return false;
     const offsets = getSelectionOffsets(editorRef);
     if (!offsets || offsets.start !== offsets.end) return false;
-    const total = normalizeText(editorRef.innerText).length;
+    const total = readEditorText(editorRef).length;
     return offsets.start === 0 || offsets.start === total;
   };
 
@@ -1067,12 +1068,19 @@ export default function Composer(props: ComposerProps) {
       props.onToast(props.attachmentsDisabledReason ?? "Attachments are unavailable.");
       return;
     }
+    const supportedFiles = files.filter((file) => isSupportedAttachmentType(file.type));
+    const unsupportedFiles = files.filter((file) => !isSupportedAttachmentType(file.type));
+
+    if (unsupportedFiles.length) {
+      await insertUnsupportedFileLinks(unsupportedFiles, []);
+    }
+
+    if (!supportedFiles.length) {
+      return;
+    }
+
     const next: ComposerAttachment[] = [];
-    for (const file of files) {
-      if (!isSupportedAttachmentType(file.type)) {
-        props.onToast(`${file.name} is not a supported attachment type.`);
-        continue;
-      }
+    for (const file of supportedFiles) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
         props.onToast(`${file.name} exceeds the 8MB limit.`);
         continue;
@@ -1190,7 +1198,7 @@ export default function Composer(props: ComposerProps) {
         target: clipboardLinks[index] || createObjectUrl(file),
       }));
 
-    if (props.isSandboxWorkspace && props.onUploadInboxFiles) {
+    if (props.onUploadInboxFiles) {
       const uploaded = await Promise.resolve(props.onUploadInboxFiles(files, { notify: false }));
       if (Array.isArray(uploaded) && uploaded.length) {
         const links = uploaded
@@ -1760,7 +1768,6 @@ export default function Composer(props: ComposerProps) {
                           ref={fileInputRef}
                           type="file"
                           multiple
-                          accept={ACCEPTED_FILE_TYPES.join(",")}
                           class="hidden"
                           disabled={attachmentsDisabled()}
                           onChange={(event: Event) => {

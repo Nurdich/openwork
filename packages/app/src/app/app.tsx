@@ -51,6 +51,7 @@ import {
 } from "./lib/opencode-session";
 import { clearPerfLogs, finishPerf, perfNow, recordPerfLog } from "./lib/perf-log";
 import {
+  AUTO_COMPACT_CONTEXT_PREF_KEY,
   DEFAULT_MODEL,
   HIDE_TITLEBAR_PREF_KEY,
   MCP_QUICK_CONNECT,
@@ -103,6 +104,7 @@ import {
   isVisibleTextPart,
   isTauriRuntime,
   modelEquals,
+  normalizeDirectoryQueryPath,
   normalizeDirectoryPath,
 } from "./utils";
 import { currentLocale, initLocale, setLocale, t, type Language } from "../i18n";
@@ -1092,6 +1094,7 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(
     null
   );
+  const [autoCreateAttemptedByWorkspace, setAutoCreateAttemptedByWorkspace] = createSignal<Record<string, boolean>>({});
   const SESSION_BY_WORKSPACE_KEY = "openwork.workspace-last-session.v1";
   const readSessionByWorkspace = () => {
     if (typeof window === "undefined") return {} as Record<string, string>;
@@ -1464,6 +1467,7 @@ export default function App() {
       const parts = buildPromptParts(resolvedDraft);
       const selectedVariant = modelVariant() ?? undefined;
       const reasoningEffort = resolveCodexReasoningEffort(model.modelID, selectedVariant ?? null);
+      const requestVariant = reasoningEffort ? undefined : selectedVariant;
       const promptOverrides = reasoningEffort
         ? ({ reasoning_effort: reasoningEffort } as const)
         : undefined;
@@ -1498,7 +1502,7 @@ export default function App() {
             arguments: command.arguments,
             agent: agent ?? undefined,
             model: modelString,
-            variant: selectedVariant,
+            variant: requestVariant,
             ...(promptOverrides ?? {}),
             parts: files.length ? files : undefined,
           }),
@@ -1509,7 +1513,7 @@ export default function App() {
           sessionID,
           model,
           agent: agent ?? undefined,
-          variant: selectedVariant,
+          variant: requestVariant,
           ...(promptOverrides ?? {}),
           parts,
         });
@@ -1616,6 +1620,34 @@ export default function App() {
       throw error;
     }
   }
+
+  const triggerAutoCompaction = async (sessionID: string) => {
+    if (!autoCompactContext()) return;
+    if (autoCompactingSessionId() === sessionID) return;
+
+    setAutoCompactingSessionId(sessionID);
+    try {
+      await compactCurrentSession(sessionID);
+    } catch {
+      // ignore auto-compaction failures; manual compact remains available
+    } finally {
+      setAutoCompactingSessionId((current) => (current === sessionID ? null : current));
+    }
+  };
+
+  const [lastSessionStatus, setLastSessionStatus] = createSignal<string | null>(null);
+  createEffect(() => {
+    const sessionID = selectedSessionId();
+    const status = sessionID ? sessionStatusById()[sessionID] ?? null : null;
+    const previous = lastSessionStatus();
+    setLastSessionStatus(status);
+
+    if (!sessionID) return;
+    if (!autoCompactContext()) return;
+    if (status !== "idle") return;
+    if (!previous || previous === "idle") return;
+    void triggerAutoCompaction(sessionID);
+  });
 
   const messageIdFromInfo = (message: MessageWithParts) => {
     const id = (message.info as { id?: string | number }).id;
@@ -2255,7 +2287,9 @@ export default function App() {
 
   const [showThinking, setShowThinking] = createSignal(false);
   const [hideTitlebar, setHideTitlebar] = createSignal(false);
+  const [autoCompactContext, setAutoCompactContext] = createSignal(false);
   const [modelVariant, setModelVariant] = createSignal<string | null>(null);
+  const [autoCompactingSessionId, setAutoCompactingSessionId] = createSignal<string | null>(null);
 
   const MODEL_VARIANT_OPTIONS = [
     { value: "none", label: "None" },
@@ -2481,7 +2515,7 @@ export default function App() {
       if (!directory) {
         try {
           const pathInfo = unwrap(await c.path.get());
-          const discovered = normalizeDirectoryPath(pathInfo.directory ?? "");
+          const discovered = normalizeDirectoryQueryPath(pathInfo.directory ?? "");
           if (discovered) {
             directory = discovered;
             c = createClient(config.baseUrl, directory, config.auth);
@@ -2491,13 +2525,7 @@ export default function App() {
         }
       }
 
-      const queryDirectory = (() => {
-        const trimmed = (directory ?? "").trim();
-        if (!trimmed) return undefined;
-        const unified = trimmed.replace(/\\/g, "/");
-        const withoutTrailing = unified.replace(/\/+$/, "");
-        return withoutTrailing || "/";
-      })();
+      const queryDirectory = normalizeDirectoryQueryPath(directory) || undefined;
 
       // Fetch sessions scoped to the workspace directory to avoid loading the
       // full global session list for every workspace.
@@ -2743,7 +2771,28 @@ export default function App() {
     if (selectedSessionId()) return;
 
     const list = sessions();
-    if (!list.length) return;
+    if (!list.length) {
+      const workspaceKey = workspaceStore.activeWorkspaceId().trim() || "__default__";
+      if (autoCreateAttemptedByWorkspace()[workspaceKey]) {
+        return;
+      }
+      setAutoCreateAttemptedByWorkspace((prev) => ({
+        ...prev,
+        [workspaceKey]: true,
+      }));
+      void createSessionAndOpen();
+      return;
+    }
+
+    const workspaceKey = workspaceStore.activeWorkspaceId().trim() || "__default__";
+    if (autoCreateAttemptedByWorkspace()[workspaceKey]) {
+      setAutoCreateAttemptedByWorkspace((prev) => {
+        if (!prev[workspaceKey]) return prev;
+        const next = { ...prev };
+        delete next[workspaceKey];
+        return next;
+      });
+    }
 
     const workspaceId = workspaceStore.activeWorkspaceId();
     const map = workspaceId ? readSessionByWorkspace() : null;
@@ -4310,7 +4359,7 @@ export default function App() {
     if (!resolvedProjectDir) {
       try {
         const pathInfo = unwrap(await activeClient.path.get());
-        const discoveredRaw = normalizeDirectoryPath(pathInfo.directory ?? "");
+        const discoveredRaw = normalizeDirectoryQueryPath(pathInfo.directory ?? "");
         const discovered = discoveredRaw.replace(/^\/private\/tmp(?=\/|$)/, "/tmp");
         if (discovered) {
           resolvedProjectDir = discovered;
@@ -4500,7 +4549,7 @@ export default function App() {
     if (!resolvedProjectDir) {
       try {
         const pathInfo = unwrap(await activeClient.path.get());
-        const discoveredRaw = normalizeDirectoryPath(pathInfo.directory ?? "");
+        const discoveredRaw = normalizeDirectoryQueryPath(pathInfo.directory ?? "");
         const discovered = discoveredRaw.replace(/^\/private\/tmp(?=\/|$)/, "/tmp");
         if (discovered) {
           resolvedProjectDir = discovered;
@@ -4857,6 +4906,18 @@ export default function App() {
             const parsed = JSON.parse(storedHideTitlebar);
             if (typeof parsed === "boolean") {
               setHideTitlebar(parsed);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const storedAutoCompactContext = window.localStorage.getItem(AUTO_COMPACT_CONTEXT_PREF_KEY);
+        if (storedAutoCompactContext != null) {
+          try {
+            const parsed = JSON.parse(storedAutoCompactContext);
+            if (typeof parsed === "boolean") {
+              setAutoCompactContext(parsed);
             }
           } catch {
             // ignore
@@ -5301,6 +5362,15 @@ export default function App() {
   createEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      window.localStorage.setItem(AUTO_COMPACT_CONTEXT_PREF_KEY, JSON.stringify(autoCompactContext()));
+    } catch {
+      // ignore
+    }
+  });
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
       const value = modelVariant();
       if (value) {
         window.localStorage.setItem(VARIANT_PREF_KEY, value);
@@ -5712,6 +5782,8 @@ export default function App() {
       openDefaultModelPicker,
       showThinking: showThinking(),
       toggleShowThinking: () => setShowThinking((v) => !v),
+      autoCompactContext: autoCompactContext(),
+      toggleAutoCompactContext: () => setAutoCompactContext((v) => !v),
       hideTitlebar: hideTitlebar(),
       toggleHideTitlebar: () => setHideTitlebar((v) => !v),
       modelVariantLabel: formatModelVariantLabel(modelVariant()),
@@ -5841,6 +5913,7 @@ export default function App() {
     exportWorkspaceBusy: workspaceStore.exportingWorkspaceConfig(),
     clientConnected: Boolean(client()),
     openworkServerStatus: openworkServerStatus(),
+    startupPreference: startupPreference(),
     openworkServerClient: openworkServerClient(),
     openworkServerSettings: openworkServerSettings(),
     openworkServerHostInfo: openworkServerHostInfo(),
@@ -5884,6 +5957,8 @@ export default function App() {
     busyLabel: busyLabel(),
     developerMode: developerMode(),
     showThinking: showThinking(),
+    autoCompactContext: autoCompactContext(),
+    toggleAutoCompactContext: () => setAutoCompactContext((v) => !v),
     groupMessageParts,
     summarizeStep,
     expandedStepIds: expandedStepIds(),

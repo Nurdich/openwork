@@ -70,7 +70,7 @@ import {
   SlidersHorizontal,
   Zap,
 } from "lucide-solid";
-import { currentLocale, t } from "../../i18n";
+import type { Language } from "../../i18n";
 
 export type DashboardViewProps = {
   tab: DashboardTab;
@@ -238,10 +238,14 @@ export type DashboardViewProps = {
   openDefaultModelPicker: () => void;
   showThinking: boolean;
   toggleShowThinking: () => void;
+  autoCompactContext: boolean;
+  toggleAutoCompactContext: () => void;
   hideTitlebar: boolean;
   toggleHideTitlebar: () => void;
   modelVariantLabel: string;
   editModelVariant: () => void;
+  language: Language;
+  setLanguage: (value: Language) => void;
   updateAutoCheck: boolean;
   toggleUpdateAutoCheck: () => void;
   updateAutoDownload: boolean;
@@ -329,27 +333,26 @@ type SkillsSetBundleV1 = {
 };
 
 export default function DashboardView(props: DashboardViewProps) {
-  const translate = (key: string) => t(key, currentLocale());
   const title = createMemo(() => {
     switch (props.tab) {
       case "scheduled":
-        return translate("nav.automations");
+        return "Automations";
       case "soul":
-        return translate("nav.soul");
+        return "Soul";
       case "skills":
-        return translate("dashboard.skills");
+        return "Skills";
       case "plugins":
-        return translate("nav.extensions");
+        return "Extensions";
       case "mcp":
-        return translate("nav.extensions");
+        return "Extensions";
       case "identities":
-        return translate("nav.messaging");
+        return "Messaging";
       case "config":
-        return translate("dashboard.advanced");
+        return "Advanced";
       case "settings":
-        return translate("dashboard.settings");
+        return "Settings";
       default:
-        return translate("nav.automations");
+        return "Automations";
     }
   });
 
@@ -358,15 +361,15 @@ export default function DashboardView(props: DashboardViewProps) {
     workspace.openworkWorkspaceName?.trim() ||
     workspace.name?.trim() ||
     workspace.path?.trim() ||
-    translate("dashboard.worker");
+    "Worker";
   const workspaceKindLabel = (workspace: WorkspaceInfo) =>
     workspace.workspaceType === "remote"
       ? workspace.sandboxBackend === "docker" ||
         Boolean(workspace.sandboxRunId?.trim()) ||
         Boolean(workspace.sandboxContainerName?.trim())
-        ? translate("dashboard.sandbox")
-        : translate("dashboard.remote")
-      : translate("dashboard.local");
+        ? "Sandbox"
+        : "Remote"
+      : "Local";
 
   const openSessionFromList = (workspaceId: string, sessionId: string) => {
     // Route-driven selection: navigate first and let the route effect own selectSession.
@@ -1127,7 +1130,7 @@ export default function DashboardView(props: DashboardViewProps) {
             <Show when={props.activeSoulStatus?.enabled}>
               <div class="inline-flex items-center gap-1 rounded-full border border-rose-7/40 bg-rose-3/40 px-2 py-1 text-[11px] text-rose-11">
                 <HeartPulse size={11} />
-                {translate("dashboard.soul_on")}
+                Soul on
               </div>
             </Show>
             <h1 class="text-lg font-medium">{title()}</h1>
@@ -1330,10 +1333,14 @@ export default function DashboardView(props: DashboardViewProps) {
                   openDefaultModelPicker={props.openDefaultModelPicker}
                   showThinking={props.showThinking}
                   toggleShowThinking={props.toggleShowThinking}
+                  autoCompactContext={props.autoCompactContext}
+                  toggleAutoCompactContext={props.toggleAutoCompactContext}
                   hideTitlebar={props.hideTitlebar}
                   toggleHideTitlebar={props.toggleHideTitlebar}
                   modelVariantLabel={props.modelVariantLabel}
                   editModelVariant={props.editModelVariant}
+                  language={props.language}
+                  setLanguage={props.setLanguage}
                   updateAutoCheck={props.updateAutoCheck}
                   toggleUpdateAutoCheck={props.toggleUpdateAutoCheck}
                   updateAutoDownload={props.updateAutoDownload}
@@ -1389,7 +1396,7 @@ export default function DashboardView(props: DashboardViewProps) {
                     onClick={props.repairOpencodeCache}
                     disabled={props.cacheRepairBusy || !props.developerMode}
                   >
-                    {props.cacheRepairBusy ? translate("dashboard.repairing_cache") : translate("dashboard.repair_cache")}
+                    {props.cacheRepairBusy ? "Repairing cache" : "Repair cache"}
                   </Button>
                   <Button
                     variant="outline"
@@ -1397,7 +1404,7 @@ export default function DashboardView(props: DashboardViewProps) {
                     onClick={props.stopHost}
                     disabled={props.busy}
                   >
-                    {translate("dashboard.retry")}
+                    Retry
                   </Button>
                   <Show when={props.cacheRepairResult}>
                     <span class="text-xs text-red-12/80">
@@ -1459,6 +1466,7 @@ export default function DashboardView(props: DashboardViewProps) {
         <StatusBar
           clientConnected={props.clientConnected}
           openworkServerStatus={props.openworkServerStatus}
+          startupPreference={props.startupPreference}
           developerMode={props.developerMode}
           onOpenSettings={() => openSettings("general")}
           onOpenMessaging={openConfig}
@@ -1476,7 +1484,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("scheduled")}
             >
               <History size={18} />
-              {translate("nav.automations")}
+              Automations
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1485,7 +1493,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("soul")}
             >
               <HeartPulse size={18} class={soulNavIconClass()} />
-              {translate("nav.soul")}
+              Soul
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1494,7 +1502,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("skills")}
             >
               <Zap size={18} />
-              {translate("dashboard.skills")}
+              Skills
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1503,7 +1511,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("mcp")}
             >
               <Box size={18} />
-              {translate("nav.extensions")}
+              Extensions
             </button>
             <button
               class={`flex flex-col items-center gap-1 text-xs ${
@@ -1512,7 +1520,7 @@ export default function DashboardView(props: DashboardViewProps) {
               onClick={() => props.setTab("identities")}
             >
               <MessageCircle size={18} />
-              {translate("nav.messaging")}
+              IDs
             </button>
             <Show when={props.developerMode}>
               <button
@@ -1531,12 +1539,12 @@ export default function DashboardView(props: DashboardViewProps) {
 
       <aside class="w-56 hidden md:flex flex-col bg-dls-sidebar border-l border-dls-border p-4">
         <div class="space-y-1 pt-2">
-          {navItem("scheduled", translate("nav.automations"), <History size={18} />)}
-          {navItem("soul", translate("nav.soul"), <HeartPulse size={18} class={soulNavIconClass()} />)}
-          {navItem("skills", translate("dashboard.skills"), <Zap size={18} />)}
-          {navItem("mcp", translate("nav.extensions"), <Box size={18} />)}
-          {navItem("identities", translate("nav.messaging"), <MessageCircle size={18} />)}
-          <Show when={props.developerMode}>{navItem("config", translate("dashboard.advanced"), <SlidersHorizontal size={18} />)}</Show>
+          {navItem("scheduled", "Automations", <History size={18} />)}
+          {navItem("soul", "Soul", <HeartPulse size={18} class={soulNavIconClass()} />)}
+          {navItem("skills", "Skills", <Zap size={18} />)}
+          {navItem("mcp", "Extensions", <Box size={18} />)}
+          {navItem("identities", "Messaging", <MessageCircle size={18} />)}
+          <Show when={props.developerMode}>{navItem("config", "Advanced", <SlidersHorizontal size={18} />)}</Show>
         </div>
       </aside>
 
