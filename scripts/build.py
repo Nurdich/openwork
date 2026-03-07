@@ -11,13 +11,14 @@ if _enc.lower().replace('-', '') not in ('utf8', 'utf-8'):
         pass
 
 """
-build.py — 更新三方组件 + 编译 OpenWork 桌面应用（Windows）
+build.py — 更新三方组件 + 编译 OpenWork 桌面应用（Windows）或 musl-linux 主程序
 
 用法:
-    python scripts/build.py                   # 完整流程
+    python scripts/build.py                   # 完整流程（Windows 桌面安装包）
     python scripts/build.py --skip-update     # 跳过 sidecar 版本更新
     python scripts/build.py --update-only     # 只更新版本，不编译
     python scripts/build.py --debug           # Debug 模式（快，包大）
+    python scripts/build.py --musl-linux      # 编译 musl-linux-x64 主程序（无界面）
 
 完整流程:
     1. 查询 GitHub 获取 opencode 最新版本
@@ -27,9 +28,13 @@ build.py — 更新三方组件 + 编译 OpenWork 桌面应用（Windows）
     5. 汇报安装包路径
 
 输出产物:
-    packages/desktop/src-tauri/target/release/bundle/
+    packages/desktop/src-tauri/target/release/bundle/  (桌面安装包)
         nsis/  OpenWork_x.x.x_x64-setup.exe
         msi/   OpenWork_x.x.x_x64_en-US.msi
+    dist/linux-musl/  (musl-linux 主程序)
+        openwork-bun-linux-x64-musl
+        openwork-server-bun-linux-x64-musl
+        opencode-router-bun-linux-x64-musl
 """
 
 import argparse
@@ -237,10 +242,138 @@ def report_artifacts(debug: bool) -> None:
         rel = a.relative_to(REPO_ROOT)
         print(f"  {_c('32','✓')}  {rel}  ({mb:.1f} MB)")
 
+# ── musl-linux 主程序编译 ────────────────────────────────────────────────────
+MUSL_OUTDIR = REPO_ROOT / "dist" / "linux-musl"
+BUN_VERSION_FOR_MUSL = "1.3.10"  # 与 bun --version 保持一致
+BUN_MUSL_CACHE = Path.home() / ".bun" / "cross-compile" / "bun-linux-x64-musl"
+BUN_MUSL_DOWNLOAD_URL = (
+    "https://github.com/oven-sh/bun/releases/download/"
+    f"bun-v{BUN_VERSION_FOR_MUSL}/bun-linux-x64-musl.zip"
+)
+
+ORCHESTRATOR_DIR = REPO_ROOT / "packages" / "orchestrator"
+SERVER_DIR       = REPO_ROOT / "packages" / "server"
+ROUTER_DIR       = REPO_ROOT / "packages" / "opencode-router"
+
+
+def ensure_musl_bun_baseline() -> Path:
+    """
+    确保 musl bun baseline 可执行文件已缓存。
+    Bun 跨平台编译需要目标平台的 bun 可执行文件作为 baseline。
+    缓存路径：~/.bun/cross-compile/bun-linux-x64-musl
+    """
+    import zipfile
+    cache = BUN_MUSL_CACHE
+    if cache.exists() and cache.stat().st_size > 50 * 1024 * 1024:
+        ok(f"musl bun baseline 已缓存: {cache}")
+        return cache
+    info(f"下载 bun-linux-x64-musl v{BUN_VERSION_FOR_MUSL}...")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = Path(tmp) / "bun-linux-x64-musl.zip"
+        try:
+            urllib.request.urlretrieve(BUN_MUSL_DOWNLOAD_URL, zip_path)
+        except Exception as e:
+            die(f"下载 bun musl baseline 失败: {e}\n请手动下载并放置到 {cache}")
+        with zipfile.ZipFile(zip_path) as zf:
+            members = zf.namelist()
+            bun_entry = next((m for m in members if m.endswith("/bun") or m == "bun"), None)
+            if not bun_entry:
+                die(f"zip 中未找到 bun 可执行文件，成员: {members}")
+            data = zf.read(bun_entry)
+        cache.write_bytes(data)
+        ok(f"musl bun baseline 已缓存: {cache}  ({len(data) // 1024 // 1024} MB)")
+    return cache
+
+
+def do_build_musl_linux() -> None:
+    """
+    编译三个 musl-linux-x64 无界面主程序：
+      openwork         (orchestrator, 含 TUI 但无 Tauri 界面)
+      openwork-server  (HTTP API server)
+      opencode-router  (Slack/Telegram/WhatsApp 路由桥)
+    产物输出到 dist/linux-musl/
+    """
+    baseline = ensure_musl_bun_baseline()
+    MUSL_OUTDIR.mkdir(parents=True, exist_ok=True)
+
+    # ── openwork-server（直接 CLI 编译）
+    server_out = MUSL_OUTDIR / "openwork-server-bun-linux-x64-musl"
+    info("编译 openwork-server...")
+    run(
+        [
+            "bun", "build", "src/cli.ts", "--compile", "--production",
+            "--target=bun-linux-x64-musl",
+            f"--compile-executable-path={baseline}",
+            f"--outfile={server_out}",
+        ],
+        cwd=SERVER_DIR,
+    )
+    ok(f"openwork-server → {server_out.relative_to(REPO_ROOT)}")
+
+    # ── opencode-router（直接 CLI 编译）
+    router_out = MUSL_OUTDIR / "opencode-router-bun-linux-x64-musl"
+    info("编译 opencode-router...")
+    run(
+        [
+            "bun", "build", "src/cli.ts", "--compile", "--production",
+            "--target=bun-linux-x64-musl",
+            f"--compile-executable-path={baseline}",
+            f"--outfile={router_out}",
+        ],
+        cwd=ROUTER_DIR,
+    )
+    ok(f"opencode-router → {router_out.relative_to(REPO_ROOT)}")
+
+    # ── openwork orchestrator（Bun.build() API + solidPlugin）
+    # orchestrator 的 tui/app.tsx 使用 @opentui/solid JSX transform，
+    # 必须通过 solidPlugin 预处理才能交叉编译。
+    orch_out = MUSL_OUTDIR / "openwork-bun-linux-x64-musl"
+    info("编译 openwork orchestrator (solidPlugin)...")
+    # Bun.build() API executablePath 在 Windows 下需要用路径分隔符 '\\' 的 Windows 路径
+    win_baseline = str(baseline).replace("\\", "\\\\") if IS_WINDOWS else str(baseline)
+    build_script = f'''import solidPlugin from "{ORCHESTRATOR_DIR.as_posix()}/node_modules/@opentui/solid/scripts/solid-plugin";
+import {{ mkdirSync }} from "node:fs";
+const result = await Bun.build({{
+  tsconfig: "{ORCHESTRATOR_DIR.as_posix()}/tsconfig.json",
+  plugins: [solidPlugin],
+  entrypoints: ["{ORCHESTRATOR_DIR.as_posix()}/src/cli.ts"],
+  define: {{ __OPENWORK_ORCHESTRATOR_VERSION__: JSON.stringify((await Bun.file("{ORCHESTRATOR_DIR.as_posix()}/package.json").json()).version) }},
+  compile: {{
+    target: "bun-linux-x64-musl",
+    outfile: "{orch_out.as_posix()}",
+    executablePath: "{win_baseline}",
+  }},
+}});
+if (!result.success) {{ result.logs.forEach(l => console.error(l)); process.exit(1); }}
+console.log("Built:", "{orch_out.as_posix()}");
+'''
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".ts", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(build_script)
+        script_path = f.name
+    try:
+        run(["bun", script_path], cwd=ORCHESTRATOR_DIR)
+    finally:
+        Path(script_path).unlink(missing_ok=True)
+    ok(f"openwork → {orch_out.relative_to(REPO_ROOT)}")
+
+    # ── 报告产物
+    print()
+    ok("musl-linux 产物:")
+    for p in sorted(MUSL_OUTDIR.iterdir()):
+        if p.is_file():
+            mb = p.stat().st_size / 1024 / 1024
+            print(f"  {_c('32', chr(10003))}  {p.relative_to(REPO_ROOT)}  ({mb:.1f} MB)")
+
+
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="更新三方组件并编译 OpenWork 桌面应用",
+        description="更新三方组件并编译 OpenWork（桌面安装包或 musl-linux 主程序）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -248,6 +381,7 @@ def main() -> None:
     parser.add_argument("--update-only",   action="store_true", help="只更新版本，不编译")
     parser.add_argument("--force-sidecar", action="store_true", help="强制重建本地 sidecar（openwork-server/orchestrator）")
     parser.add_argument("--debug",         action="store_true", help="Debug 模式（跳过代码签名，速度快）")
+    parser.add_argument("--musl-linux",    action="store_true", help="编译 musl-linux-x64 主程序（openwork/server/router），跳过桌面 Tauri 构建")
     args = parser.parse_args()
 
     t0 = time.time()
@@ -273,6 +407,15 @@ def main() -> None:
     if args.update_only:
         print()
         ok(f"完成（只更新版本，未编译）  耗时 {elapsed(t0)}")
+        return
+
+    # musl-linux 主程序模式（跳过 Tauri 桌面构建）
+    if args.musl_linux:
+        do_build_musl_linux()
+        print()
+        ok(f"{'='*50}")
+        ok(f"  musl-linux 编译完成！  v{version}  耗时 {elapsed(t0)}")
+        ok(f"{'='*50}")
         return
 
     # 2. 安装依赖
